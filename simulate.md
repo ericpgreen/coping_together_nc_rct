@@ -155,8 +155,8 @@ I’m unsure about:
   set.seed(8675309)
   data <- sim(# number of facilitators
                 n_facilitator = 10, 
-              # assume facilitators have 1-3 groups
-                grp_per_fac_lo = 1, grp_per_fac_hi = 3,
+              # assume facilitators have 4 groups
+                grp_per_fac_lo = 4, grp_per_fac_hi = 4,
               # assume groups have 3-4 families
                 fam_per_gro_lo = 3, fam_per_gro_hi = 4,
               # assume families have 2-5 members
@@ -174,23 +174,38 @@ I’m unsure about:
 ```
 
 ``` r
+# look at the data
   data
 ```
 
-    ## # A tibble: 77 × 7
-    ##    member family treatment group facilitator  y_pre y_post
-    ##     <dbl>  <dbl>     <dbl> <dbl>       <dbl>  <dbl>  <dbl>
-    ##  1      1      1         1     1           1 1.44    0.840
-    ##  2      6      2         1     1           1 2.46    1.58 
-    ##  3     11      3         1     1           1 1.90    1.26 
-    ##  4     14      4         1     1           1 1.25    2.50 
-    ##  5     17      5         0     0           0 0.773   1.93 
-    ##  6     19      6         0     0           0 1.76    2.04 
-    ##  7     22      7         0     0           0 2.81    1.76 
-    ##  8     26      8         1     3           1 1.60    1.15 
-    ##  9     28      9         1     3           1 2.63    0.698
-    ## 10     32     10         1     3           1 0.0207  2.21 
-    ## # … with 67 more rows
+    ## # A tibble: 91 × 7
+    ##    member family treatment group facilitator y_pre y_post
+    ##     <dbl>  <dbl>     <dbl> <dbl>       <dbl> <dbl>  <dbl>
+    ##  1      1      1         1     1           1 1.65    1.82
+    ##  2      4      2         1     1           1 2.16    2.02
+    ##  3      7      3         1     1           1 3.06    1.67
+    ##  4      9      4         0     0           0 1.67    2.59
+    ##  5     12      5         0     0           0 1.35    2.61
+    ##  6     16      6         0     0           0 2.09    1.10
+    ##  7     18      7         1     3           1 1.12    2.90
+    ##  8     22      8         1     3           1 0.789   1.39
+    ##  9     27      9         1     3           1 2.08    1.56
+    ## 10     32     10         1     3           1 1.41    1.23
+    ## # … with 81 more rows
+
+``` r
+# families per arm
+  data %>% count(treatment)
+```
+
+    ## # A tibble: 2 × 2
+    ##   treatment     n
+    ##       <dbl> <int>
+    ## 1         0    43
+    ## 2         1    48
+
+Note: Because I let groups have varying numbers of families, there is
+not a 1:1 allocation of families to arm.
 
 ``` r
   fit <- brm(y_post ~ treatment + y_pre + 
@@ -229,10 +244,10 @@ CI (95%)
 Intercept
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-2.19
+2.16
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-0.30 – 3.33
+1.51 – 2.83
 </td>
 </tr>
 <tr>
@@ -240,10 +255,10 @@ Intercept
 treatment
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
--0.26
+-0.13
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
--1.37 – 1.51
+-0.77 – 0.46
 </td>
 </tr>
 <tr>
@@ -251,10 +266,10 @@ treatment
 y pre
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
--0.07
+-0.13
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
--0.32 – 0.18
+-0.32 – 0.05
 </td>
 </tr>
 <tr>
@@ -267,49 +282,49 @@ Random Effects
 σ<sup>2</sup>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.39
+0.33
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
 τ<sub>00</sub> <sub>facilitator</sub>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.08
+0.02
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
 τ<sub>00</sub> <sub>group</sub>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.06
+0.03
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
 ICC
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.26
+0.13
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
 N <sub>group</sub>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-12
+14
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
 N <sub>facilitator</sub>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-10
+11
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm; border-top:1px solid;">
 Observations
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left; border-top:1px solid;" colspan="2">
-77
+91
 </td>
 </tr>
 <tr>
@@ -317,7 +332,7 @@ Observations
 Marginal R<sup>2</sup> / Conditional R<sup>2</sup>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.085 / 0.172
+0.068 / 0.104
 </td>
 </tr>
 </table>

@@ -151,8 +151,8 @@ I'm unsure about:
   set.seed(8675309)
   data <- sim(# number of facilitators
                 n_facilitator = 10, 
-              # assume facilitators have 1-3 groups
-                grp_per_fac_lo = 1, grp_per_fac_hi = 3,
+              # assume facilitators have 4 groups
+                grp_per_fac_lo = 4, grp_per_fac_hi = 4,
               # assume groups have 3-4 families
                 fam_per_gro_lo = 3, fam_per_gro_hi = 4,
               # assume families have 2-5 members
@@ -170,8 +170,14 @@ I'm unsure about:
 ```
 
 ```{r}
+# look at the data
   data
+
+# families per arm
+  data %>% count(treatment)
 ```
+
+Note: Because I let groups have varying numbers of families, there is not a 1:1 allocation of families to arm.
 
 ```{r, results="hide"}
   fit <- brm(y_post ~ treatment + y_pre + 
