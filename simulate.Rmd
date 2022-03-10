@@ -149,21 +149,24 @@ I'm unsure about:
 
 ```{r}
   set.seed(8675309)
-  data <- sim(n_facilitator = 10, 
-              grp_per_fac_lo = 1,
-              grp_per_fac_hi = 3,
-              fam_per_gro_lo = 3,
-              fam_per_gro_hi = 4,
-              mem_per_fam_lo = 2,
-              mem_per_fam_hi = 5,
-              b0 = 2,             # grand mean
-              b1 = -.3,           # treatment effect
-              u0l_sd = 0,   
-              u0g_sd = 0,   
-              u0f_sd = 0,         # TEMPORARY: set to 0 to look at 1 member/fam
-              u0m_sd = 0,         # TEMPORARY: set to 0 to look at 1 member/fam
-              u0t_sd = 0,   
-              sigma_sd = .7)
+  data <- sim(# number of facilitators
+                n_facilitator = 10, 
+              # assume facilitators have 1-3 groups
+                grp_per_fac_lo = 1, grp_per_fac_hi = 3,
+              # assume groups have 3-4 families
+                fam_per_gro_lo = 3, fam_per_gro_hi = 4,
+              # assume families have 2-5 members
+                mem_per_fam_lo = 2,
+                mem_per_fam_hi = 5,
+              # model parameters
+                b0 = 2,             # grand mean
+                b1 = -.3,           # treatment effect
+                u0l_sd = 0,   
+                u0g_sd = 0,   
+                u0f_sd = 0,         # TEMP: set to 0 to look at 1 member/fam
+                u0m_sd = 0,         # TEMP: set to 0 to look at 1 member/fam
+                u0t_sd = 0,   
+                sigma_sd = .7)
 ```
 
 ```{r}
