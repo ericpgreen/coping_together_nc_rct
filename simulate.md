@@ -325,6 +325,7 @@ Marginal R<sup>2</sup> / Conditional R<sup>2</sup>
 # Next steps
 
 1.  Priors!
-2.  Set up simulation to estimate power (including variants for effect
+2.  Attrition!
+3.  Set up simulation to estimate power (including variants for effect
     size, random effects, families, etc)
-3.  Talk about how to analyze data from multiple informants
+4.  Talk about how to analyze data from multiple informants

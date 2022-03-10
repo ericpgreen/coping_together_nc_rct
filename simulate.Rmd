@@ -189,5 +189,6 @@ I'm unsure about:
 # Next steps
 
 1. Priors!
-2. Set up simulation to estimate power (including variants for effect size, random effects, families, etc)
-3. Talk about how to analyze data from multiple informants
+2. Attrition!
+3. Set up simulation to estimate power (including variants for effect size, random effects, families, etc)
+4. Talk about how to analyze data from multiple informants
