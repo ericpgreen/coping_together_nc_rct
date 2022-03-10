@@ -1,1 +1,3 @@
-# coping_together_nc_rct
+# Coping Together Trial
+
+See [simulate](simulate.md) file.
