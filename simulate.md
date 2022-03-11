@@ -61,7 +61,6 @@ I’m unsure about:
 #' @param u0g_sd random intercept SD for groups
 #' @param u0f_sd random intercept SD for families
 #' @param u0m_sd random intercept SD for members
-#' @param u0t_sd random intercept SD for time
 #' @param sigma_sd error term
 #' @param attrition_post_trt post attrition in treatment arm
 #' @param attrition_post_ctr post attrition in control arm
@@ -79,7 +78,6 @@ I’m unsure about:
                   u0g_sd = 0,   
                   u0f_sd = 0,   
                   u0m_sd = 0,   
-                  u0t_sd = 0,   
                   sigma_sd = 0,
                   attrition_post_trt = 0,
                   attrition_post_ctr = 0,
@@ -87,6 +85,8 @@ I’m unsure about:
                   ) {
     
 # calculate nesting parameters
+# this is ugly because I'm leaving it open that parameters could be fixed
+# or could vary
   if (grp_per_fac_lo==grp_per_fac_hi) {
     n_groups_per_facilitator <- grp_per_fac_lo
     n_groups <- n_groups_per_facilitator * n_facilitator
@@ -144,7 +144,6 @@ I’m unsure about:
     add_ranef("group", u0g = u0g_sd) %>%
     add_ranef("family", u0f = u0f_sd) %>%
     add_ranef("member", u0m = u0m_sd) %>%
-    add_ranef("time", u0t = u0t_sd) %>%
     add_ranef(sigma = sigma_sd) %>%
   # set group/facilitator random effects to 0 for control
     mutate(across(c(u0l, u0g), ~ case_when(arm == "control" ~ 0, 
@@ -155,7 +154,7 @@ I’m unsure about:
   # TEMPORARY: Limit to 1 member per family
     distinct(family, time, .keep_all = TRUE) %>%
   # calculate DV
-    mutate(dv = b0 + u0l + u0g + u0f + u0m + u0t + 
+    mutate(dv = b0 + u0l + u0g + u0f + u0m +  
              (b1 * treatment * post) + sigma) %>%
   # reshape
     select(member, time, family, treatment, group, facilitator, dv) %>%
@@ -187,6 +186,15 @@ I’m unsure about:
   }
 ```
 
+## How should we set the random effects for simulating data?
+
+-   Time (pre/post) is nested in family members
+-   Family members are nested in families
+-   Families are nested in groups (only relevant for post data for the
+    families in the treatment arm)
+-   Groups are nested in facilitators (only relevant for post data for
+    the families in the treatment arm)
+
 ## Check the function
 
 Let’s imagine that the dv is a composite scale, specifically the mean of
@@ -213,12 +221,11 @@ I’m unsure about:
                 mem_per_fam_lo = 2, mem_per_fam_hi = 5,
               # model parameters
                 b0 = 2,             # grand mean
-                b1 = 0.21,             # treatment effect on raw metric
-                u0l_sd = 0,   
-                u0g_sd = 0,   
-                u0f_sd = 0,         # TEMP: set to 0 to look at 1 member/fam
-                u0m_sd = 0,         # TEMP: set to 0 to look at 1 member/fam
-                u0t_sd = 0,   
+                b1 = 0.21,          # treatment effect on raw metric
+                u0l_sd = 0.0425,   
+                u0g_sd = 0.085,   
+                u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
+                u0m_sd = 0.34,    
                 sigma_sd = .68)
 ```
 
@@ -230,16 +237,16 @@ I’m unsure about:
     ## # A tibble: 160 × 7
     ##    treatment member family group facilitator y_pre y_post
     ##        <dbl>  <dbl>  <dbl> <dbl>       <dbl> <dbl>  <dbl>
-    ##  1         1      1      1     1           1  1.20   2.59
-    ##  2         1      6      2     1           1  2.66   3.32
-    ##  3         1     10      3     1           1  2.00   3.42
-    ##  4         1     13      4     1           1  1.19   1.87
-    ##  5         1     30      9     3           1  2.65   3.88
-    ##  6         1     33     10     3           1  1.87   2.59
-    ##  7         1     37     11     3           1  2.51   2.45
-    ##  8         1     41     12     3           1  1.52   1.92
-    ##  9         1     56     17     5           2  2.40   1.79
-    ## 10         1     61     18     5           2  1.40   2.67
+    ##  1         1      1      1     1           1 0.667   2.61
+    ##  2         1      6      2     1           1 2.51    3.13
+    ##  3         1     10      3     1           1 1.64    1.41
+    ##  4         1     13      4     1           1 2.44    2.18
+    ##  5         1     30      9     3           1 2.00    1.34
+    ##  6         1     33     10     3           1 2.63    3.10
+    ##  7         1     37     11     3           1 1.35    1.81
+    ##  8         1     41     12     3           1 2.17    2.84
+    ##  9         1     56     17     5           2 1.99    3.41
+    ## 10         1     61     18     5           2 0.945   1.85
     ## # … with 150 more rows
 
 ``` r
@@ -258,7 +265,7 @@ allocation of families to arm.
 
 ``` r
   m <- brm(y_post ~ 0 + Intercept + treatment + y_pre + 
-               (1 | group) + (1 | facilitator),
+               (1 | facilitator/group),
              # prior = c(prior(normal(0, 2), class = b),
              #           prior(student_t(3, 1, 1), class = sigma)),
              data = df, 
@@ -295,10 +302,10 @@ CI (95%)
 Intercept
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-2.07
+1.37
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-1.45 – 2.65
+0.66 – 2.15
 </td>
 </tr>
 <tr>
@@ -306,10 +313,10 @@ Intercept
 treatment
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-0.29
+0.20
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
--0.29 – 0.88
+-0.61 – 0.89
 </td>
 </tr>
 <tr>
@@ -317,10 +324,10 @@ treatment
 y pre
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
--0.03
+0.29
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
--0.19 – 0.13
+0.13 – 0.45
 </td>
 </tr>
 <tr>
@@ -333,7 +340,7 @@ Random Effects
 σ<sup>2</sup>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.55
+0.67
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
@@ -344,17 +351,17 @@ Random Effects
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
-τ<sub>00</sub> <sub>group</sub>
+τ<sub>00</sub> <sub>facilitator:group</sub>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.02
+0.03
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
 ICC
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.08
+0.09
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
@@ -383,7 +390,7 @@ Observations
 Marginal R<sup>2</sup> / Conditional R<sup>2</sup>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.047 / 0.080
+0.107 / 0.134
 </td>
 </tr>
 </table>
@@ -408,7 +415,6 @@ Create a new function that simulates the data and fits the model.
 #' @param u0g_sd random intercept SD for groups
 #' @param u0f_sd random intercept SD for families
 #' @param u0m_sd random intercept SD for members
-#' @param u0t_sd random intercept SD for time
 #' @param sigma_sd error term
 #' @param attrition_post_trt post attrition in treatment arm
 #' @param attrition_post_ctr post attrition in control arm
@@ -434,6 +440,8 @@ Create a new function that simulates the data and fits the model.
                      ) {
     
 # calculate nesting parameters
+# this is ugly because I'm leaving it open that parameters could be fixed
+# or could vary
   if (grp_per_fac_lo==grp_per_fac_hi) {
     n_groups_per_facilitator <- grp_per_fac_lo
     n_groups <- n_groups_per_facilitator * n_facilitator
@@ -491,7 +499,6 @@ Create a new function that simulates the data and fits the model.
     add_ranef("group", u0g = u0g_sd) %>%
     add_ranef("family", u0f = u0f_sd) %>%
     add_ranef("member", u0m = u0m_sd) %>%
-    add_ranef("time", u0t = u0t_sd) %>%
     add_ranef(sigma = sigma_sd) %>%
   # set group/facilitator random effects to 0 for control
     mutate(across(c(u0l, u0g), ~ case_when(arm == "control" ~ 0, 
@@ -499,7 +506,7 @@ Create a new function that simulates the data and fits the model.
   # TEMPORARY: Limit to 1 member per family
     distinct(family, time, .keep_all = TRUE) %>%
   # calculate DV
-    mutate(dv = b0 + u0l + u0g + u0f + u0m + u0t + 
+    mutate(dv = b0 + u0l + u0g + u0f + u0m + 
              (b1 * treatment * post) + sigma) %>%
   # reshape
     select(member, time, family, treatment, group, facilitator, dv) %>%
@@ -530,7 +537,7 @@ Create a new function that simulates the data and fits the model.
     select(-p, -missing)
   
 # fit <- brm(y_post ~ 0 + Intercept + treatment + y_pre +
-#              (1 | group) + (1 | facilitator),
+#              (1 | facilitator/group),
 #            prior = c(prior(normal(0, 2), class = b),
 #                      prior(student_t(3, 1, 1), class = sigma)),
 #            data = df,
@@ -547,8 +554,8 @@ Create a new function that simulates the data and fits the model.
 ```
 
 It’s time to simulate with different combinations of scenarios and
-parameters. Just doing 10 and only varying number of facilitators (a key
-driver of sample size in this setup) to test.
+parameters. Just doing 10 runs and only varying number of facilitators
+(a key driver of sample size in this setup) to test.
 
 ``` r
   x <- crossing(
@@ -556,7 +563,7 @@ driver of sample size in this setup) to test.
       rep = 1:10,
     # REMAINING CAN BE FIXED (ONE VALUE) OR A RANGE ------------------
     # number of facilitators
-      n_facilitator = c(10, 15), 
+      n_facilitator = c(10, 30), 
     # assume facilitators have 4 groups
       grp_per_fac_lo = 4, grp_per_fac_hi = 4,
     # assume groups have 4 families
@@ -565,13 +572,12 @@ driver of sample size in this setup) to test.
       mem_per_fam_lo = 2, mem_per_fam_hi = 5,
     # model parameters
       b0 = 2,             # grand mean
-      b1 = 0.21,          # treatment effect
-      u0l_sd = 0,   
-      u0g_sd = 0,   
-      u0f_sd = 0,         # TEMP: set to 0 to look at 1 member/fam
-      u0m_sd = 0,         # TEMP: set to 0 to look at 1 member/fam
-      u0t_sd = 0,   
-      sigma_sd = 0.68
+      b1 = 0.21,          # treatment effect on raw metric
+      u0l_sd = 0.0425,   
+      u0g_sd = 0.085,   
+      u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
+      u0m_sd = 0.34,    
+      sigma_sd = .68
   ) %>%
     mutate(analysis = pmap(., simfit)) %>%
     unnest(analysis)
@@ -582,32 +588,32 @@ driver of sample size in this setup) to test.
     filter(term=="treatment")
 ```
 
-    ## # A tibble: 20 × 35
+    ## # A tibble: 20 × 34
     ##      rep n_facilitator grp_per_fac_lo grp_per_fac_hi fam_per_gro_lo
     ##    <int>         <dbl>          <dbl>          <dbl>          <dbl>
     ##  1     1            10              4              4              4
-    ##  2     1            15              4              4              4
+    ##  2     1            30              4              4              4
     ##  3     2            10              4              4              4
-    ##  4     2            15              4              4              4
+    ##  4     2            30              4              4              4
     ##  5     3            10              4              4              4
-    ##  6     3            15              4              4              4
+    ##  6     3            30              4              4              4
     ##  7     4            10              4              4              4
-    ##  8     4            15              4              4              4
+    ##  8     4            30              4              4              4
     ##  9     5            10              4              4              4
-    ## 10     5            15              4              4              4
+    ## 10     5            30              4              4              4
     ## 11     6            10              4              4              4
-    ## 12     6            15              4              4              4
+    ## 12     6            30              4              4              4
     ## 13     7            10              4              4              4
-    ## 14     7            15              4              4              4
+    ## 14     7            30              4              4              4
     ## 15     8            10              4              4              4
-    ## 16     8            15              4              4              4
+    ## 16     8            30              4              4              4
     ## 17     9            10              4              4              4
-    ## 18     9            15              4              4              4
+    ## 18     9            30              4              4              4
     ## 19    10            10              4              4              4
-    ## 20    10            15              4              4              4
-    ## # … with 30 more variables: fam_per_gro_hi <dbl>, mem_per_fam_lo <dbl>,
+    ## 20    10            30              4              4              4
+    ## # … with 29 more variables: fam_per_gro_hi <dbl>, mem_per_fam_lo <dbl>,
     ## #   mem_per_fam_hi <dbl>, b0 <dbl>, b1 <dbl>, u0l_sd <dbl>, u0g_sd <dbl>,
-    ## #   u0f_sd <dbl>, u0m_sd <dbl>, u0t_sd <dbl>, sigma_sd <dbl>, term <chr>,
+    ## #   u0f_sd <dbl>, u0m_sd <dbl>, sigma_sd <dbl>, term <chr>,
     ## #   original_term <chr>, variable <chr>, var_label <chr>, var_class <int>,
     ## #   var_type <chr>, var_nlevels <int>, contrasts <chr>, contrasts_type <chr>,
     ## #   reference_row <lgl>, label <chr>, n_obs <dbl>, effect <chr>,

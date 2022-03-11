@@ -61,7 +61,6 @@ I'm unsure about:
 #' @param u0g_sd random intercept SD for groups
 #' @param u0f_sd random intercept SD for families
 #' @param u0m_sd random intercept SD for members
-#' @param u0t_sd random intercept SD for time
 #' @param sigma_sd error term
 #' @param attrition_post_trt post attrition in treatment arm
 #' @param attrition_post_ctr post attrition in control arm
@@ -79,7 +78,6 @@ I'm unsure about:
                   u0g_sd = 0,   
                   u0f_sd = 0,   
                   u0m_sd = 0,   
-                  u0t_sd = 0,   
                   sigma_sd = 0,
                   attrition_post_trt = 0,
                   attrition_post_ctr = 0,
@@ -87,6 +85,8 @@ I'm unsure about:
                   ) {
     
 # calculate nesting parameters
+# this is ugly because I'm leaving it open that parameters could be fixed
+# or could vary
   if (grp_per_fac_lo==grp_per_fac_hi) {
     n_groups_per_facilitator <- grp_per_fac_lo
     n_groups <- n_groups_per_facilitator * n_facilitator
@@ -144,7 +144,6 @@ I'm unsure about:
     add_ranef("group", u0g = u0g_sd) %>%
     add_ranef("family", u0f = u0f_sd) %>%
     add_ranef("member", u0m = u0m_sd) %>%
-    add_ranef("time", u0t = u0t_sd) %>%
     add_ranef(sigma = sigma_sd) %>%
   # set group/facilitator random effects to 0 for control
     mutate(across(c(u0l, u0g), ~ case_when(arm == "control" ~ 0, 
@@ -155,7 +154,7 @@ I'm unsure about:
   # TEMPORARY: Limit to 1 member per family
     distinct(family, time, .keep_all = TRUE) %>%
   # calculate DV
-    mutate(dv = b0 + u0l + u0g + u0f + u0m + u0t + 
+    mutate(dv = b0 + u0l + u0g + u0f + u0m +  
              (b1 * treatment * post) + sigma) %>%
   # reshape
     select(member, time, family, treatment, group, facilitator, dv) %>%
@@ -187,6 +186,13 @@ I'm unsure about:
   }
 ```
 
+## How should we set the random effects for simulating data?
+
+* Time (pre/post) is nested in family members
+* Family members are nested in families
+* Families are nested in groups (only relevant for post data for the families in the treatment arm)
+* Groups are nested in facilitators (only relevant for post data for the families in the treatment arm)
+
 ## Check the function
 
 Let's imagine that the dv is a composite scale, specifically the mean of 32 items with possible values of 1 to 5. Thus, the dv can range from 1 to 5. Higher scores represent better family functioning. Let's also imagine that we recruit distressed families, so the baseline mean is 2
@@ -208,12 +214,11 @@ I'm unsure about:
                 mem_per_fam_lo = 2, mem_per_fam_hi = 5,
               # model parameters
                 b0 = 2,             # grand mean
-                b1 = 0.21,             # treatment effect on raw metric
-                u0l_sd = 0,   
-                u0g_sd = 0,   
-                u0f_sd = 0,         # TEMP: set to 0 to look at 1 member/fam
-                u0m_sd = 0,         # TEMP: set to 0 to look at 1 member/fam
-                u0t_sd = 0,   
+                b1 = 0.21,          # treatment effect on raw metric
+                u0l_sd = 0.0425,   
+                u0g_sd = 0.085,   
+                u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
+                u0m_sd = 0.34,    
                 sigma_sd = .68)
 ```
 
@@ -229,7 +234,7 @@ Note: If there are varying numbers of families, there will not be a 1:1 allocati
 
 ```{r, results="hide"}
   m <- brm(y_post ~ 0 + Intercept + treatment + y_pre + 
-               (1 | group) + (1 | facilitator),
+               (1 | facilitator/group),
              # prior = c(prior(normal(0, 2), class = b),
              #           prior(student_t(3, 1, 1), class = sigma)),
              data = df, 
@@ -261,7 +266,6 @@ Create a new function that simulates the data and fits the model.
 #' @param u0g_sd random intercept SD for groups
 #' @param u0f_sd random intercept SD for families
 #' @param u0m_sd random intercept SD for members
-#' @param u0t_sd random intercept SD for time
 #' @param sigma_sd error term
 #' @param attrition_post_trt post attrition in treatment arm
 #' @param attrition_post_ctr post attrition in control arm
@@ -287,6 +291,8 @@ Create a new function that simulates the data and fits the model.
                      ) {
     
 # calculate nesting parameters
+# this is ugly because I'm leaving it open that parameters could be fixed
+# or could vary
   if (grp_per_fac_lo==grp_per_fac_hi) {
     n_groups_per_facilitator <- grp_per_fac_lo
     n_groups <- n_groups_per_facilitator * n_facilitator
@@ -344,7 +350,6 @@ Create a new function that simulates the data and fits the model.
     add_ranef("group", u0g = u0g_sd) %>%
     add_ranef("family", u0f = u0f_sd) %>%
     add_ranef("member", u0m = u0m_sd) %>%
-    add_ranef("time", u0t = u0t_sd) %>%
     add_ranef(sigma = sigma_sd) %>%
   # set group/facilitator random effects to 0 for control
     mutate(across(c(u0l, u0g), ~ case_when(arm == "control" ~ 0, 
@@ -352,7 +357,7 @@ Create a new function that simulates the data and fits the model.
   # TEMPORARY: Limit to 1 member per family
     distinct(family, time, .keep_all = TRUE) %>%
   # calculate DV
-    mutate(dv = b0 + u0l + u0g + u0f + u0m + u0t + 
+    mutate(dv = b0 + u0l + u0g + u0f + u0m + 
              (b1 * treatment * post) + sigma) %>%
   # reshape
     select(member, time, family, treatment, group, facilitator, dv) %>%
@@ -383,7 +388,7 @@ Create a new function that simulates the data and fits the model.
     select(-p, -missing)
   
 # fit <- brm(y_post ~ 0 + Intercept + treatment + y_pre +
-#              (1 | group) + (1 | facilitator),
+#              (1 | facilitator/group),
 #            prior = c(prior(normal(0, 2), class = b),
 #                      prior(student_t(3, 1, 1), class = sigma)),
 #            data = df,
@@ -399,7 +404,7 @@ Create a new function that simulates the data and fits the model.
   }
 ```
 
-It's time to simulate with different combinations of scenarios and parameters. Just doing 10 and only varying number of facilitators (a key driver of sample size in this setup) to test.
+It's time to simulate with different combinations of scenarios and parameters. Just doing 10 runs and only varying number of facilitators (a key driver of sample size in this setup) to test.
 
 ```{r, results='hide'}
   x <- crossing(
@@ -407,7 +412,7 @@ It's time to simulate with different combinations of scenarios and parameters. J
       rep = 1:10,
     # REMAINING CAN BE FIXED (ONE VALUE) OR A RANGE ------------------
     # number of facilitators
-      n_facilitator = c(10, 15), 
+      n_facilitator = c(10, 30), 
     # assume facilitators have 4 groups
       grp_per_fac_lo = 4, grp_per_fac_hi = 4,
     # assume groups have 4 families
@@ -416,13 +421,12 @@ It's time to simulate with different combinations of scenarios and parameters. J
       mem_per_fam_lo = 2, mem_per_fam_hi = 5,
     # model parameters
       b0 = 2,             # grand mean
-      b1 = 0.21,          # treatment effect
-      u0l_sd = 0,   
-      u0g_sd = 0,   
-      u0f_sd = 0,         # TEMP: set to 0 to look at 1 member/fam
-      u0m_sd = 0,         # TEMP: set to 0 to look at 1 member/fam
-      u0t_sd = 0,   
-      sigma_sd = 0.68
+      b1 = 0.21,          # treatment effect on raw metric
+      u0l_sd = 0.0425,   
+      u0g_sd = 0.085,   
+      u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
+      u0m_sd = 0.34,    
+      sigma_sd = .68
   ) %>%
     mutate(analysis = pmap(., simfit)) %>%
     unnest(analysis)
