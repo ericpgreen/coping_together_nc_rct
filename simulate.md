@@ -60,6 +60,9 @@ I’m unsure about:
 #' @param u0f_sd random intercept SD for families
 #' @param u0m_sd random intercept SD for members
 #' @param u0t_sd random intercept SD for time
+#' @param sigma_sd error term
+#' @param attrition_post_trt post attrition in treatment arm
+#' @param attrition_post_ctr post attrition in control arm
 
   sim <- function(n_facilitator, 
                   grp_per_fac_lo = 1,
@@ -76,6 +79,8 @@ I’m unsure about:
                   u0m_sd = 0,   
                   u0t_sd = 0,   
                   sigma_sd = 0,
+                  attrition_post_trt = 0,
+                  attrition_post_ctr = 0,
                   ... # helps the function work with pmap() 
                   ) {
     
@@ -132,8 +137,28 @@ I’m unsure about:
     pivot_wider(id_cols = c(member, family, treatment, group, facilitator),
                 names_from = time,
                 values_from = dv) %>%
+  # scale
+    mutate(pre = scale(pre),
+           post = scale(post)) %>%
     rename(y_pre = pre,
-           y_post = post)
+           y_post = post) %>%
+  # attrition
+  # TODO NOT SET UP FOR MULTIPLE FAMILY MEMBERS
+    group_by(treatment) %>%
+    nest() %>%
+    mutate(p = case_when(
+      treatment==1 ~ attrition_post_trt,
+      TRUE ~ attrition_post_ctr
+    )) %>%
+    mutate(data = purrr::map(data, ~ mutate(.x, 
+                                            missing = rbinom(n(), 1, p)))) %>% 
+    unnest() %>%
+    ungroup() %>%
+    mutate(y_post = case_when(
+      missing == 1 ~ NA_real_,
+      TRUE ~ y_post
+    )) %>%
+    select(-p, -missing)
   }
 ```
 
@@ -208,9 +233,12 @@ Note: Because I let groups have varying numbers of families, there is
 not a 1:1 allocation of families to arm.
 
 ``` r
-  fit <- brm(y_post ~ treatment + y_pre + 
+  fit <- brm(y_post ~ 0 + Intercept + treatment + y_pre + 
                (1 | group) + (1 | facilitator),
+             prior = c(prior(normal(0, 2), class = b),
+                       prior(student_t(3, 1, 1), class = sigma)),
              data = data, 
+             control = list(adapt_delta = 0.9),
              cores = parallel::detectCores(),
              backend = "cmdstanr")
 ```
@@ -340,7 +368,7 @@ Marginal R<sup>2</sup> / Conditional R<sup>2</sup>
 # Next steps
 
 1.  Priors!
-2.  Attrition!
+2.  Attrition! (added but only for the 1 member/family scenario)
 3.  Set up simulation to estimate power (including variants for effect
     size, random effects, families, etc)
 4.  Talk about how to analyze data from multiple informants
