@@ -195,6 +195,26 @@ I’m unsure about:
 -   Groups are nested in facilitators (only relevant for post data for
     the families in the treatment arm)
 
+``` r
+  b1 <- 0.31         # treatment effect on raw metric
+  b0 <- 2            # grand mean
+  b1 <- 0.31         # treatment effect on raw metric
+  u0l_sd <- 0.0425   # by-facilitator random intercept SD
+  u0g_sd <- 0.085    # by-group random intercept SD
+  u0f_sd <- 0.17     # by-family random intercept SD       
+  u0m_sd <- 0.34     # by-member random intercept SD
+  sigma_sd <- 0.68   # residual (error) SD
+```
+
+[DeBruine & Barr](https://osf.io/h2ry6/download):
+
+> If you lack any pilot data to work with, you can start with the
+> general rule of thumb setting the residual variance to about twice the
+> size of the by-subject or by-item variance components (see
+> supplementary materials from Barr et al., 2013 at
+> <https://talklab.psy.gla.ac.uk/simgen/realdata.html> for results from
+> an informal convenience sample).
+
 ## Check the function
 
 Let’s imagine that the dv is a composite scale, specifically the mean of
@@ -212,22 +232,25 @@ I’m unsure about:
 ``` r
   set.seed(8675309)
   df <- sim(# number of facilitators
-                n_facilitator = 10, 
-              # assume facilitators have 4 groups
-                grp_per_fac_lo = 4, grp_per_fac_hi = 4,
-              # assume groups have 4 families
-                fam_per_gro_lo = 4, fam_per_gro_hi = 4,
-              # assume families have 2-5 members
-                mem_per_fam_lo = 2, mem_per_fam_hi = 5,
-              # model parameters
-                b0 = 2,             # grand mean
-                b1 = 0.31,          # treatment effect on raw metric
-                u0l_sd = 0.0425,   
-                u0g_sd = 0.085,   
-                u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
-                u0m_sd = 0.34,    
-                sigma_sd = .68)
+             n_facilitator = 10, 
+            # assume facilitators have 4 groups
+             grp_per_fac_lo = 4, grp_per_fac_hi = 4,
+            # assume groups have 4 families
+              fam_per_gro_lo = 4, fam_per_gro_hi = 4,
+            # assume families have 2-5 members
+              mem_per_fam_lo = 2, mem_per_fam_hi = 5,
+            # model parameters
+              b0 = b0,             
+              b1 = b1,          
+              u0l_sd = u0l_sd,   
+              u0g_sd = u0g_sd,   
+              u0f_sd = u0f_sd,       
+             #u0m_sd = u0m_sd,  # TEMP set to 0 by default   
+              sigma_sd = sigma_sd)
 ```
+
+The function initially sets up to have members nested within families,
+but we drop to just 1 member/family before simulating data.
 
 ``` r
 # look at the data
@@ -237,16 +260,16 @@ I’m unsure about:
     ## # A tibble: 160 × 7
     ##    treatment member family group facilitator y_pre y_post
     ##        <dbl>  <dbl>  <dbl> <dbl>       <dbl> <dbl>  <dbl>
-    ##  1         1      1      1     1           1 0.667   2.71
-    ##  2         1      6      2     1           1 2.51    3.23
-    ##  3         1     10      3     1           1 1.64    1.51
-    ##  4         1     13      4     1           1 2.44    2.28
-    ##  5         1     30      9     3           1 2.00    1.44
-    ##  6         1     33     10     3           1 2.63    3.20
-    ##  7         1     37     11     3           1 1.35    1.91
-    ##  8         1     41     12     3           1 2.17    2.94
-    ##  9         1     56     17     5           2 1.99    3.51
-    ## 10         1     61     18     5           2 0.945   1.95
+    ##  1         1      1      1     1           1  1.21   3.25
+    ##  2         1      6      2     1           1  2.83   3.54
+    ##  3         1     10      3     1           1  1.65   1.52
+    ##  4         1     13      4     1           1  2.76   2.60
+    ##  5         1     30      9     3           1  1.90   1.34
+    ##  6         1     33     10     3           1  2.43   3.00
+    ##  7         1     37     11     3           1  1.67   2.22
+    ##  8         1     41     12     3           1  1.90   2.67
+    ##  9         1     56     17     5           2  2.21   3.72
+    ## 10         1     61     18     5           2  1.07   2.08
     ## # … with 150 more rows
 
 ``` r
@@ -260,8 +283,8 @@ I’m unsure about:
     ## 1         0    80
     ## 2         1    80
 
-Note: If there are varying numbers of families, there will not be a 1:1
-allocation of families to arm.
+Note: If there are varying numbers of families per group, there will not
+be a 1:1 allocation of families to arm.
 
 ``` r
   m <- brm(y_post ~ 0 + Intercept + treatment + y_pre + 
@@ -302,10 +325,10 @@ CI (95%)
 Intercept
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-1.36
+1.73
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-0.62 – 2.08
+0.79 – 2.67
 </td>
 </tr>
 <tr>
@@ -313,10 +336,10 @@ Intercept
 treatment
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-0.30
+0.37
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
--0.36 – 1.07
+-0.47 – 1.30
 </td>
 </tr>
 <tr>
@@ -324,10 +347,10 @@ treatment
 y pre
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-0.29
+0.11
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-0.13 – 0.46
+-0.05 – 0.29
 </td>
 </tr>
 <tr>
@@ -340,28 +363,28 @@ Random Effects
 σ<sup>2</sup>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.67
+0.56
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
 τ<sub>00</sub> <sub>facilitator</sub>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.03
+0.06
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
 τ<sub>00</sub> <sub>facilitator:group</sub>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.03
+0.05
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
 ICC
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.08
+0.17
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
@@ -390,10 +413,54 @@ Observations
 Marginal R<sup>2</sup> / Conditional R<sup>2</sup>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.122 / 0.148
+0.085 / 0.159
 </td>
 </tr>
 </table>
+
+The `lmer()` approach:
+
+``` r
+  m2 <- lmer(y_post ~ treatment + y_pre + 
+               (1 | facilitator/group),
+             data = df)
+  
+  m2
+```
+
+    ## Linear mixed model fit by REML ['lmerMod']
+    ## Formula: y_post ~ treatment + y_pre + (1 | facilitator/group)
+    ##    Data: df
+    ## REML criterion at convergence: 372.4413
+    ## Random effects:
+    ##  Groups            Name        Std.Dev.
+    ##  group:facilitator (Intercept) 0.1851  
+    ##  facilitator       (Intercept) 0.2250  
+    ##  Residual                      0.7397  
+    ## Number of obs: 160, groups:  group:facilitator, 21; facilitator, 11
+    ## Fixed Effects:
+    ## (Intercept)    treatment        y_pre  
+    ##      1.7251       0.3717       0.1178
+
+``` r
+  broom.mixed::tidy(m2) %>%
+    mutate(term = case_when(
+      effect=="ran_pars" ~ paste(group, term),
+      TRUE ~ term
+    )) %>%
+    mutate(starting_value = c(b0, b1, NA, u0g_sd, u0l_sd, sigma_sd)) %>%
+    select(term, estimate, starting_value)
+```
+
+    ## # A tibble: 6 × 3
+    ##   term                              estimate starting_value
+    ##   <chr>                                <dbl>          <dbl>
+    ## 1 (Intercept)                          1.73          2     
+    ## 2 treatment                            0.372         0.31  
+    ## 3 y_pre                                0.118        NA     
+    ## 4 group:facilitator sd__(Intercept)    0.185         0.085 
+    ## 5 facilitator sd__(Intercept)          0.225         0.0425
+    ## 6 Residual sd__Observation             0.740         0.68
 
 ## Full simulation
 
@@ -558,8 +625,6 @@ parameters. Just doing 10 runs and only varying number of facilitators
 (a key driver of sample size in this setup) to test.
 
 ``` r
-  b1 <- 0.31    # treatment effect on raw metric
-
   x <- crossing(
     # number of replicates
       rep = 1:10,
@@ -573,13 +638,13 @@ parameters. Just doing 10 runs and only varying number of facilitators
     # assume families have 2-5 members
       mem_per_fam_lo = 2, mem_per_fam_hi = 5,
     # model parameters
-      b0 = 2,             # grand mean
-      b1 = b1,            # treatment effect on raw metric
-      u0l_sd = 0.0425,   
-      u0g_sd = 0.085,   
-      u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
-      u0m_sd = 0.34,    
-      sigma_sd = .68
+      b0 = b0,             
+      b1 = b1,          
+      u0l_sd = u0l_sd,   
+      u0g_sd = u0g_sd,   
+      u0f_sd = u0f_sd,       
+     #u0m_sd = u0m_sd,  # TEMP set to 0 by default   
+      sigma_sd = sigma_sd
   ) %>%
     mutate(analysis = pmap(., simfit)) %>%
     unnest(analysis)
@@ -590,7 +655,7 @@ parameters. Just doing 10 runs and only varying number of facilitators
     filter(term=="treatment")
 ```
 
-    ## # A tibble: 20 × 34
+    ## # A tibble: 20 × 33
     ##      rep n_facilitator grp_per_fac_lo grp_per_fac_hi fam_per_gro_lo
     ##    <int>         <dbl>          <dbl>          <dbl>          <dbl>
     ##  1     1            10              4              4              4
@@ -613,11 +678,11 @@ parameters. Just doing 10 runs and only varying number of facilitators
     ## 18     9            30              4              4              4
     ## 19    10            10              4              4              4
     ## 20    10            30              4              4              4
-    ## # … with 29 more variables: fam_per_gro_hi <dbl>, mem_per_fam_lo <dbl>,
+    ## # … with 28 more variables: fam_per_gro_hi <dbl>, mem_per_fam_lo <dbl>,
     ## #   mem_per_fam_hi <dbl>, b0 <dbl>, b1 <dbl>, u0l_sd <dbl>, u0g_sd <dbl>,
-    ## #   u0f_sd <dbl>, u0m_sd <dbl>, sigma_sd <dbl>, term <chr>,
-    ## #   original_term <chr>, variable <chr>, var_label <chr>, var_class <int>,
-    ## #   var_type <chr>, var_nlevels <int>, contrasts <chr>, contrasts_type <chr>,
+    ## #   u0f_sd <dbl>, sigma_sd <dbl>, term <chr>, original_term <chr>,
+    ## #   variable <chr>, var_label <chr>, var_class <int>, var_type <chr>,
+    ## #   var_nlevels <int>, contrasts <chr>, contrasts_type <chr>,
     ## #   reference_row <lgl>, label <chr>, n_obs <dbl>, effect <chr>,
     ## #   component <chr>, group <chr>, estimate <dbl>, std.error <dbl>, …
 
@@ -643,7 +708,7 @@ parameters. Just doing 10 runs and only varying number of facilitators
            )
 ```
 
-![](simulate_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+![](simulate_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
 
 # Next steps
 

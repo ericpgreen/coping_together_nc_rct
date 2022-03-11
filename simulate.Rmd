@@ -193,6 +193,22 @@ I'm unsure about:
 * Families are nested in groups (only relevant for post data for the families in the treatment arm)
 * Groups are nested in facilitators (only relevant for post data for the families in the treatment arm)
 
+```{r}
+  b1 <- 0.31         # treatment effect on raw metric
+  b0 <- 2            # grand mean
+  b1 <- 0.31         # treatment effect on raw metric
+  u0l_sd <- 0.0425   # by-facilitator random intercept SD
+  u0g_sd <- 0.085    # by-group random intercept SD
+  u0f_sd <- 0.17     # by-family random intercept SD       
+  u0m_sd <- 0.34     # by-member random intercept SD
+  sigma_sd <- 0.68   # residual (error) SD
+```
+
+
+[DeBruine & Barr](https://osf.io/h2ry6/download):
+
+> If you lack any pilot data to work with, you can start with the general rule of thumb setting the residual variance to about twice the size of the by-subject or by-item variance components (see supplementary materials from Barr et al., 2013 at https://talklab.psy.gla.ac.uk/simgen/realdata.html for results from an informal convenience sample).
+
 ## Check the function
 
 Let's imagine that the dv is a composite scale, specifically the mean of 32 items with possible values of 1 to 5. Thus, the dv can range from 1 to 5. Higher scores represent better family functioning. Let's also imagine that we recruit distressed families, so the baseline mean is 2
@@ -205,22 +221,24 @@ I'm unsure about:
 ```{r}
   set.seed(8675309)
   df <- sim(# number of facilitators
-                n_facilitator = 10, 
-              # assume facilitators have 4 groups
-                grp_per_fac_lo = 4, grp_per_fac_hi = 4,
-              # assume groups have 4 families
-                fam_per_gro_lo = 4, fam_per_gro_hi = 4,
-              # assume families have 2-5 members
-                mem_per_fam_lo = 2, mem_per_fam_hi = 5,
-              # model parameters
-                b0 = 2,             # grand mean
-                b1 = 0.31,          # treatment effect on raw metric
-                u0l_sd = 0.0425,   
-                u0g_sd = 0.085,   
-                u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
-                u0m_sd = 0.34,    
-                sigma_sd = .68)
+             n_facilitator = 10, 
+            # assume facilitators have 4 groups
+             grp_per_fac_lo = 4, grp_per_fac_hi = 4,
+            # assume groups have 4 families
+              fam_per_gro_lo = 4, fam_per_gro_hi = 4,
+            # assume families have 2-5 members
+              mem_per_fam_lo = 2, mem_per_fam_hi = 5,
+            # model parameters
+              b0 = b0,             
+              b1 = b1,          
+              u0l_sd = u0l_sd,   
+              u0g_sd = u0g_sd,   
+              u0f_sd = u0f_sd,       
+             #u0m_sd = u0m_sd,  # TEMP set to 0 by default   
+              sigma_sd = sigma_sd)
 ```
+
+The function initially sets up to have members nested within families, but we drop to just 1 member/family before simulating data.
 
 ```{r}
 # look at the data
@@ -230,7 +248,7 @@ I'm unsure about:
   df %>% count(treatment)
 ```
 
-Note: If there are varying numbers of families, there will not be a 1:1 allocation of families to arm.
+Note: If there are varying numbers of families per group, there will not be a 1:1 allocation of families to arm.
 
 ```{r, results="hide"}
   m <- brm(y_post ~ 0 + Intercept + treatment + y_pre + 
@@ -244,6 +262,24 @@ Note: If there are varying numbers of families, there will not be a 1:1 allocati
 
 ```{r}
   tab_model(m)
+```
+
+The `lmer()` approach:
+
+```{r}
+  m2 <- lmer(y_post ~ treatment + y_pre + 
+               (1 | facilitator/group),
+             data = df)
+  
+  m2
+  
+  broom.mixed::tidy(m2) %>%
+    mutate(term = case_when(
+      effect=="ran_pars" ~ paste(group, term),
+      TRUE ~ term
+    )) %>%
+    mutate(starting_value = c(b0, b1, NA, u0g_sd, u0l_sd, sigma_sd)) %>%
+    select(term, estimate, starting_value)
 ```
 
 ## Full simulation
@@ -407,8 +443,6 @@ Create a new function that simulates the data and fits the model.
 It's time to simulate with different combinations of scenarios and parameters. Just doing 10 runs and only varying number of facilitators (a key driver of sample size in this setup) to test.
 
 ```{r, results='hide'}
-  b1 <- 0.31    # treatment effect on raw metric
-
   x <- crossing(
     # number of replicates
       rep = 1:10,
@@ -422,13 +456,13 @@ It's time to simulate with different combinations of scenarios and parameters. J
     # assume families have 2-5 members
       mem_per_fam_lo = 2, mem_per_fam_hi = 5,
     # model parameters
-      b0 = 2,             # grand mean
-      b1 = b1,            # treatment effect on raw metric
-      u0l_sd = 0.0425,   
-      u0g_sd = 0.085,   
-      u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
-      u0m_sd = 0.34,    
-      sigma_sd = .68
+      b0 = b0,             
+      b1 = b1,          
+      u0l_sd = u0l_sd,   
+      u0g_sd = u0g_sd,   
+      u0f_sd = u0f_sd,       
+     #u0m_sd = u0m_sd,  # TEMP set to 0 by default   
+      sigma_sd = sigma_sd
   ) %>%
     mutate(analysis = pmap(., simfit)) %>%
     unnest(analysis)
