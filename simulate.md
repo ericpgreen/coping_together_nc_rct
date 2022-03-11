@@ -221,7 +221,7 @@ I’m unsure about:
                 mem_per_fam_lo = 2, mem_per_fam_hi = 5,
               # model parameters
                 b0 = 2,             # grand mean
-                b1 = 0.21,          # treatment effect on raw metric
+                b1 = 0.31,          # treatment effect on raw metric
                 u0l_sd = 0.0425,   
                 u0g_sd = 0.085,   
                 u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
@@ -237,16 +237,16 @@ I’m unsure about:
     ## # A tibble: 160 × 7
     ##    treatment member family group facilitator y_pre y_post
     ##        <dbl>  <dbl>  <dbl> <dbl>       <dbl> <dbl>  <dbl>
-    ##  1         1      1      1     1           1 0.667   2.61
-    ##  2         1      6      2     1           1 2.51    3.13
-    ##  3         1     10      3     1           1 1.64    1.41
-    ##  4         1     13      4     1           1 2.44    2.18
-    ##  5         1     30      9     3           1 2.00    1.34
-    ##  6         1     33     10     3           1 2.63    3.10
-    ##  7         1     37     11     3           1 1.35    1.81
-    ##  8         1     41     12     3           1 2.17    2.84
-    ##  9         1     56     17     5           2 1.99    3.41
-    ## 10         1     61     18     5           2 0.945   1.85
+    ##  1         1      1      1     1           1 0.667   2.71
+    ##  2         1      6      2     1           1 2.51    3.23
+    ##  3         1     10      3     1           1 1.64    1.51
+    ##  4         1     13      4     1           1 2.44    2.28
+    ##  5         1     30      9     3           1 2.00    1.44
+    ##  6         1     33     10     3           1 2.63    3.20
+    ##  7         1     37     11     3           1 1.35    1.91
+    ##  8         1     41     12     3           1 2.17    2.94
+    ##  9         1     56     17     5           2 1.99    3.51
+    ## 10         1     61     18     5           2 0.945   1.95
     ## # … with 150 more rows
 
 ``` r
@@ -302,10 +302,10 @@ CI (95%)
 Intercept
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-1.37
+1.36
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-0.66 – 2.15
+0.62 – 2.08
 </td>
 </tr>
 <tr>
@@ -313,10 +313,10 @@ Intercept
 treatment
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-0.20
+0.30
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
--0.61 – 0.89
+-0.36 – 1.07
 </td>
 </tr>
 <tr>
@@ -327,7 +327,7 @@ y pre
 0.29
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:center;  ">
-0.13 – 0.45
+0.13 – 0.46
 </td>
 </tr>
 <tr>
@@ -361,7 +361,7 @@ Random Effects
 ICC
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.09
+0.08
 </td>
 <tr>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; text-align:left; padding-top:0.1cm; padding-bottom:0.1cm;">
@@ -390,7 +390,7 @@ Observations
 Marginal R<sup>2</sup> / Conditional R<sup>2</sup>
 </td>
 <td style=" padding:0.2cm; text-align:left; vertical-align:top; padding-top:0.1cm; padding-bottom:0.1cm; text-align:left;" colspan="2">
-0.107 / 0.134
+0.122 / 0.148
 </td>
 </tr>
 </table>
@@ -558,6 +558,8 @@ parameters. Just doing 10 runs and only varying number of facilitators
 (a key driver of sample size in this setup) to test.
 
 ``` r
+  b1 <- 0.31    # treatment effect on raw metric
+
   x <- crossing(
     # number of replicates
       rep = 1:10,
@@ -572,7 +574,7 @@ parameters. Just doing 10 runs and only varying number of facilitators
       mem_per_fam_lo = 2, mem_per_fam_hi = 5,
     # model parameters
       b0 = 2,             # grand mean
-      b1 = 0.21,          # treatment effect on raw metric
+      b1 = b1,            # treatment effect on raw metric
       u0l_sd = 0.0425,   
       u0g_sd = 0.085,   
       u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
@@ -626,6 +628,7 @@ parameters. Just doing 10 runs and only varying number of facilitators
     ggplot(aes(x = factor(rep), y = estimate, 
                ymin = conf.low, ymax = conf.high)) +
       geom_pointrange(fatten = 1/4, alpha=0.7) +
+      geom_hline(yintercept = b1, linetype="dashed") +
       geom_hline(yintercept = 0, color = "red") +
       facet_wrap(~ n_families) +
       theme_bw() + 

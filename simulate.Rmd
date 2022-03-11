@@ -214,7 +214,7 @@ I'm unsure about:
                 mem_per_fam_lo = 2, mem_per_fam_hi = 5,
               # model parameters
                 b0 = 2,             # grand mean
-                b1 = 0.21,          # treatment effect on raw metric
+                b1 = 0.31,          # treatment effect on raw metric
                 u0l_sd = 0.0425,   
                 u0g_sd = 0.085,   
                 u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
@@ -407,6 +407,8 @@ Create a new function that simulates the data and fits the model.
 It's time to simulate with different combinations of scenarios and parameters. Just doing 10 runs and only varying number of facilitators (a key driver of sample size in this setup) to test.
 
 ```{r, results='hide'}
+  b1 <- 0.31    # treatment effect on raw metric
+
   x <- crossing(
     # number of replicates
       rep = 1:10,
@@ -421,7 +423,7 @@ It's time to simulate with different combinations of scenarios and parameters. J
       mem_per_fam_lo = 2, mem_per_fam_hi = 5,
     # model parameters
       b0 = 2,             # grand mean
-      b1 = 0.21,          # treatment effect on raw metric
+      b1 = b1,            # treatment effect on raw metric
       u0l_sd = 0.0425,   
       u0g_sd = 0.085,   
       u0f_sd = 0,      # 0.17 TEMP: set to 0 to look at 1 member/fam
@@ -444,6 +446,7 @@ It's time to simulate with different combinations of scenarios and parameters. J
     ggplot(aes(x = factor(rep), y = estimate, 
                ymin = conf.low, ymax = conf.high)) +
       geom_pointrange(fatten = 1/4, alpha=0.7) +
+      geom_hline(yintercept = b1, linetype="dashed") +
       geom_hline(yintercept = 0, color = "red") +
       facet_wrap(~ n_families) +
       theme_bw() + 
