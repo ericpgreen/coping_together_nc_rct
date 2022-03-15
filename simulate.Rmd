@@ -441,7 +441,7 @@ The first approach is in the NHST tradition and calculates the percentage of sim
       rep = 1:250,
     # SAMPLE SIZE DETERMINATION -------------
     # number of leaders 
-      n_leader = c(5, 13, 25), 
+      n_leader = c(5, 8), 
     # groups per leader
       grp_per_lead = 3,
     # families per group
@@ -541,113 +541,6 @@ Small effects will be difficult to detect with anything less than 600 families i
          title = "Power simulation",
          subtitle = str_wrap(paste0(sims, " simulations each panel"), 100),
          caption = str_wrap(paste0("Data simulated with the following random intercepts (SD): ", u0l_sd, " leader; ", u0g_sd, " group; ", u0f_sd, " family; ", sigma_sd, " residual error."), 120)
-    )
-```
-
-### What if random effects/error are smaller than observed in pilot?
-
-There is some bump in detectable effect size if we assume that the random intercepts for family is at the low end of the 95% confidence interval.
-
-```{r, results='hide', message=FALSE, warning=FALSE}
-  b1 <- 0.189        # treatment effect on raw metric
-  b0 <- 3.5          # grand mean
-  u0l_sd <- 0.0001   # by-leader random intercept SD
-  u0g_sd <- 0.0001   # by-group random intercept SD
-  u0f_sd <- 0.09     # by-family random intercept SD       
-  #u0m_sd <- 0.0001  # by-member random intercept SD
-  sigma_sd <- 0.34   # residual (error) SD
-  
-  u0f_sd_l95 <- 0.09
-  
-  x <- crossing(
-    # number of simulations per combination
-      rep = 1:250,
-    # SAMPLE SIZE DETERMINATION -------------
-    # number of leaders 
-      n_leader = 13, 
-    # groups per leader
-      grp_per_lead = 3,
-    # families per group
-      fam_per_gro_lo = 4, fam_per_gro_hi = 4,
-    # members per family
-      mem_per_fam_lo = 2, mem_per_fam_hi = 5,
-    # MODEL ----------------------------------
-    # effect
-      b1 = b1,
-      b0 = b0,             
-      u0l_sd = u0l_sd,   
-      u0g_sd = u0g_sd,   
-      u0f_sd = c(u0f_sd, u0f_sd_l95),       
-      #u0m_sd = c(u0m_sd, u0m_sd),
-      sigma_sd = sigma_sd
-  ) %>%
-    mutate(seed = 1:nrow(.),
-           action = "fit",
-           method = "lme4"
-           ) %>%
-    mutate(analysis = pmap(., simfit)) %>%
-    unnest(analysis)
-```
-
-```{r, echo=FALSE, dpi = 300}
-# calculate power
-# !! must group by all crossings that are not fixed
-  power <- x %>% 
-    filter(term=="treatment") %>% 
-    group_by(u0f_sd, u0f_sd_l95) %>%
-    mutate(check = ifelse(conf.low > 0, 1, 0)) %>% 
-    summarise(power = mean(check))
-
-  x <- x %>%
-    left_join(power)
-  
-# calculate mean estimate of b1
-# !! must group by all crossings that are not fixed
-  d_mean <- x %>% 
-    filter(term=="treatment") %>% 
-    group_by(u0f_sd, u0f_sd_l95) %>%
-    summarise(d_mean = mean(estimate_d)) 
-  
-  x <- x %>%
-    left_join(d_mean)
-  
-  sims <- max(x$rep)
-
-  x %>% 
-    filter(term=="treatment") %>%
-    mutate(u0f_sd = case_when(
-      u0f_sd == min(x$u0f_sd) ~ "RE Family: pilot l95",
-      TRUE ~ "RE Family: Pilot"
-    )) %>%
-    mutate(u0f_sd_l95 = case_when(
-      u0f_sd_l95 == min(x$u0f_sd_l95) ~ "RE Family: pilot",
-      TRUE ~ "RE Family: pilot"
-    )) %>%
-    ggplot(aes(x = factor(rep), y = estimate_d, 
-               ymin = conf.low_d, ymax = conf.high_d)) +
-    geom_pointrange(fatten = 1/4, alpha=0.5) +
-    geom_hline(aes(yintercept = d_mean), linetype="dashed") +
-    geom_hline(yintercept = 0, color = "red") +
-    geom_text(aes(x = -Inf, y = Inf, label = paste0("power = ", power,
-                                                    "; mean effect = ",
-                                                    round(d_mean, 2))),
-              hjust=0, vjust=1) +
-    scale_y_continuous(breaks = c(0, .3, .6)) +
-    facet_grid(u0f_sd ~ sigma_sd) +
-    theme_bw() + 
-    theme(plot.title = element_text(face="bold"),
-          plot.title.position = "plot",
-          legend.position = "none",
-          panel.grid = element_blank(),
-          axis.text.x = element_blank(),
-          axis.ticks.x = element_blank()) +
-    labs(x = "Simulation index",
-         y = "Estimate (Cohen's d)",
-         title = "Power simulation",
-         subtitle = str_wrap(paste0(sims, " simulations each panel; ", "N = ", 
-                                    max(x$families), 
-                                    " families; target effect size 0.30"), 100),
-         caption = str_wrap(paste0("Data simulated with the following random intercepts (SD): ", u0l_sd, " leader; ", u0g_sd, " group.", "Family intercept as specified. ", sigma_sd, " residual error."), 120)
     )
 ```
 

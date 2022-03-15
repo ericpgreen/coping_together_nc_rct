@@ -4,10 +4,12 @@ CT Trial Power Simulation
 # Introduction
 
 In this trial, families will be assigned to a treatment or an inactive
-control arm. Families assigned to treatment will be nested in groups
-that are assigned to leaders. Data will be collected from all eligible
-family members before (?) and after the intervention is delivered to
-families assigned to the treatment arm.
+control arm. This is a partially nested design. Families assigned to
+treatment will be nested in groups that are assigned to leaders, control
+families will not.
+
+\[There might also be nesting of repeated measures (pre/post) for
+individuals, but this is not certain.\]
 
 ![](diagram.png)<!-- -->
 
@@ -46,7 +48,7 @@ Eve has some pilot data like this from a single group pre-post study
 where families were nested in groups **but there were not multiple
 groups per leader**. The families were selected from the target
 population, though judging by the baseline means it’s likely that not
-all would meet more stringent criteria for programmatic need.
+all would meet more stringent criteria for need.
 
     # A tibble: 4 × 4
     # Groups:   caregiver [2]
@@ -57,7 +59,7 @@ all would meet more stringent criteria for programmatic need.
     3         1     0  4.13 0.625
     4         1     1  4.26 0.641
 
-There was no random effect of group.
+There was no random effect of group observed in the small pilot:
 
     # only 1 group per leader in pilot
     # model had convergence issues
@@ -101,17 +103,11 @@ Cohen’s d value of 0.30 would be `0.63*0.3 = 0.189`
 
 ## Partial nesting
 
-I’m unsure about how to set the random effects with partial nesting:
-
--   Family members are nested in families
--   Families are nested in groups
--   Groups are nested in leaders
-
-However, control families are not nested in groups or leaders. I [posted
-to the stan users
-group](https://discourse.mc-stan.org/t/help-with-partially-nested-data-model/26771?u=eric_green)
-to get some advice. My current approach is to set the control
-groups/leaders to “none”.
+John shared a paper by [Candlish et
+al. (2018)](https://bmcmedresmethodol.biomedcentral.com/articles/10.1186/s12874-018-0559-x)
+that simulated the analysis of partially nested RCTs. We take the
+approach of coding the partially nested clusters as ‘singleton’ clusters
+and fit a partially nested homoscedastic mixed effects model.
 
 ## Function
 
@@ -159,10 +155,7 @@ groups/leaders to “none”.
     
   set.seed(seed)
     
-# calculate nesting parameters
-# this is ugly because I'm leaving it open that parameters could be fixed
-# or could vary
-  
+# calculate nesting parameters --------------------------------------
   n_groups <- (n_leader * grp_per_lead)*2  
     
   if (fam_per_gro_lo==fam_per_gro_hi) {
@@ -286,6 +279,7 @@ groups/leaders to “none”.
                         each = grp_per_lead)) %>%
     mutate(leader = paste0("l", leader))
   
+# join back leader assignments and calculate dv
   df <- df3 %>%
     left_join(leader_assignment) %>%
   # create singleton clusters for leader 
@@ -453,7 +447,7 @@ percentage of simulated 95% confidence intervals are above 0.
       rep = 1:250,
     # SAMPLE SIZE DETERMINATION -------------
     # number of leaders 
-      n_leader = c(5, 13, 25), 
+      n_leader = c(5, 8), 
     # groups per leader
       grp_per_lead = 3,
     # families per group
@@ -505,97 +499,6 @@ effects would need to be in the 0.60 SD range.
 ```
 
 ![](simulate_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
-
-### What if random effects/error are smaller than observed in pilot?
-
-There is some bump in detectable effect size if we assume that the
-random intercepts (SD) and residual error are at the low end of the 95%
-confidence interval.
-
-``` r
-  b1 <- 0.189        # treatment effect on raw metric
-  b0 <- 3.5          # grand mean
-  u0l_sd <- 0.0001   # by-leader random intercept SD
-  u0g_sd <- 0.0001   # by-group random intercept SD
-  u0f_sd <- 0.09     # by-family random intercept SD       
-  #u0m_sd <- 0.0001  # by-member random intercept SD
-  sigma_sd <- 0.34   # residual (error) SD
-  
-  x <- crossing(
-    # number of simulations per combination
-      rep = 1:250,
-    # SAMPLE SIZE DETERMINATION -------------
-    # number of leaders 
-      n_leader = 13, 
-    # groups per leader
-      grp_per_lead = 3,
-    # families per group
-      fam_per_gro_lo = 4, fam_per_gro_hi = 4,
-    # members per family
-      mem_per_fam_lo = 2, mem_per_fam_hi = 5,
-    # MODEL ----------------------------------
-    # effect
-      b1 = b1,
-      b0 = b0,             
-      u0l_sd = u0l_sd,   
-      u0g_sd = u0g_sd,   
-      u0f_sd = c(u0f_sd, u0f_sd),       
-      #u0m_sd = c(u0m_sd, u0m_sd),
-      sigma_sd = c(sigma_sd, sigma_sd)
-  ) %>%
-    mutate(seed = 1:nrow(.),
-           action = "fit",
-           method = "lme4"
-           ) %>%
-    mutate(analysis = pmap(., simfit)) %>%
-    unnest(analysis)
-```
-
-![](simulate_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
-
-Here’s a look at 240 families using the low end of the 95% confidence
-intervals from the pilot.
-
-``` r
-  b1 <- 0.189        # treatment effect on raw metric
-  b0 <- 3.5          # grand mean
-  u0l_sd <- 0.0001   # by-leader random intercept SD
-  u0g_sd <- 0.0001   # by-group random intercept SD
-  u0f_sd <- 0.09     # by-family random intercept SD       
-  #u0m_sd <- 0.0001  # by-member random intercept SD
-  sigma_sd <- 0.34   # residual (error) SD
-  
-  x <- crossing(
-    # number of simulations per combination
-      rep = 1:250,
-    # SAMPLE SIZE DETERMINATION -------------
-    # number of leaders 
-      n_leader = 10, 
-    # groups per leader
-      grp_per_lead = 3,
-    # families per group
-      fam_per_gro_lo = 4, fam_per_gro_hi = 4,
-    # members per family
-      mem_per_fam_lo = 2, mem_per_fam_hi = 5,
-    # MODEL ----------------------------------
-    # effect
-      b1 = b1,
-      b0 = b0,             
-      u0l_sd = u0l_sd,   
-      u0g_sd = u0g_sd,   
-      u0f_sd = u0f_sd,       
-      #u0m_sd = u0m_sd,
-      sigma_sd = sigma_sd
-  ) %>%
-    mutate(seed = 1:nrow(.),
-           action = "fit",
-           method = "lme4"
-           ) %>%
-    mutate(analysis = pmap(., simfit)) %>%
-    unnest(analysis)
-```
-
-![](simulate_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
 
 # Next steps
 
