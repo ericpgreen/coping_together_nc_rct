@@ -5,9 +5,9 @@ CT Trial Power Simulation
 
 In this trial, families will be assigned to a treatment or an inactive
 control arm. Families assigned to treatment will be nested in groups
-that are assigned to facilitators. Data will be collected from all
-eligible family members before (?) and after the intervention is
-delivered to families assigned to the treatment arm.
+that are assigned to leaders. Data will be collected from all eligible
+family members before (?) and after the intervention is delivered to
+families assigned to the treatment arm.
 
 ![](diagram.png)<!-- -->
 
@@ -43,10 +43,10 @@ imagine that we recruit distressed families, so the baseline mean is in
 the 2.5-3.5 range.
 
 Eve has some pilot data like this from a single group pre-post study
-where families were nested in groups but there were not multiple groups
-per facilitator. The families were selected from the target population,
-though judging by the baseline means it’s likely that not all would meet
-more stringent criteria for programmatic need.
+where families were nested in groups **but there were not multiple
+groups per leader**. The families were selected from the target
+population, though judging by the baseline means it’s likely that not
+all would meet more stringent criteria for programmatic need.
 
     # A tibble: 4 × 4
     # Groups:   caregiver [2]
@@ -59,31 +59,35 @@ more stringent criteria for programmatic need.
 
 There was no random effect of group.
 
-    Linear mixed model fit by REML ['lmerMod']
-    Formula: walsh_mean ~ post + caregiver + (1 | group/family/member)
-       Data: df_all
-    REML criterion at convergence: 157.8327
-    Random effects:
-     Groups                     Name        Std.Dev.
-     member:(family:group)      (Intercept) 0.2784  
-     family:group               (Intercept) 0.3921  
-     group                      (Intercept) 0.0000  
-     Residual                               0.4445  
-    Number of obs: 88, groups:  
-    member:(family:group), 48; family:group, 18; group, 5
-    Fixed Effects:
-    (Intercept)         post    caregiver  
-        4.09006     -0.01671      0.10859  
+    # only 1 group per leader in pilot
+    # model had convergence issues
+
+    # Fixed Effects 
+
+    Parameter   | Coefficient |   SE |        95% CI | t(81) |      p
+    -----------------------------------------------------------------
+    (Intercept) |        4.09 | 0.14 | [ 3.82, 4.37] | 29.75 | < .001
+    post        |       -0.02 | 0.10 | [-0.22, 0.19] | -0.17 | 0.865 
+    caregiver   |        0.11 | 0.13 | [-0.15, 0.38] |  0.85 | 0.396 
+
+    # Random Effects 
+
+    Parameter                                  | Coefficient |       95% CI
+    -----------------------------------------------------------------------
+    SD (Intercept: member:(family:group))      |        0.28 | [0.00, 0.46]
+    SD (Intercept: family:group)               |        0.39 | [0.09, 0.59]
+    SD (Intercept: group)                      |        0.00 | [0.00, 0.37]
+    SD (Residual)                              |        0.44 | [0.34, 0.52]
 
 These are the values we’ll use in the simulation. With a SD of \~0.63, a
 Cohen’s d value of 0.30 would be `0.63*0.3 = 0.189`
 
       b1 <- 0.189        # treatment effect on raw metric
       b0 <- 3.5          # grand mean
-      u0l_sd <- 0.0001   # by-facilitator random intercept SD
+      u0l_sd <- 0.0001   # by-leader random intercept SD
       u0g_sd <- 0.0001   # by-group random intercept SD
       u0f_sd <- 0.39     # by-family random intercept SD       
-      u0m_sd <- 0.28     # by-member random intercept SD
+      #u0m_sd <- 0.28    # by-member random intercept SD (ONLY IF REPEATED MEASURES)
       sigma_sd <- 0.44   # residual (error) SD
 
 [DeBruine & Barr](https://osf.io/h2ry6/download):
@@ -101,13 +105,13 @@ I’m unsure about how to set the random effects with partial nesting:
 
 -   Family members are nested in families
 -   Families are nested in groups
--   Groups are nested in facilitators
+-   Groups are nested in leaders
 
-However, control families are not nested in groups or facilitators. I
-[posted to the stan users
+However, control families are not nested in groups or leaders. I [posted
+to the stan users
 group](https://discourse.mc-stan.org/t/help-with-partially-nested-data-model/26771?u=eric_green)
 to get some advice. My current approach is to set the control
-groups/facilitators to “none”.
+groups/leaders to “none”.
 
 ## Function
 
@@ -116,16 +120,15 @@ groups/facilitators to “none”.
 #' @param seed
 #' @param action simulate data only or data + fit
 #' @param method lme4 or brms
-#' @param n_facilitator number of group facilitators
-#' @param grp_per_fac_lo number of groups per facilitator, low end
-#' @param grp_per_fac_hi number of groups per facilitator, high end
+#' @param n_leader number of group leaders (treatment)
+#' @param grp_per_lead number of groups per leader
 #' @param fam_per_gro_lo number of families per group, low end
 #' @param fam_per_gro_hi number of families per group, high end
 #' @param mem_per_fam_lo number of members per family, low end
 #' @param mem_per_fam_hi number of members per family, high end
 #' @param b0 intercept
 #' @param b1 fixed effect of treatment
-#' @param u0l_sd random intercept SD for facilitators
+#' @param u0l_sd random intercept SD for leaders
 #' @param u0g_sd random intercept SD for groups
 #' @param u0f_sd random intercept SD for families
 #' @param u0m_sd random intercept SD for members
@@ -136,20 +139,19 @@ groups/facilitators to “none”.
   simfit <- function(seed,
                      action = c("data only", "fit"),
                      method = c("lme4", "brms"),
-                     n_facilitator, 
-                     grp_per_fac_lo,
-                     grp_per_fac_hi,
+                     n_leader, 
+                     grp_per_lead,
                      fam_per_gro_lo,
                      fam_per_gro_hi,
                      mem_per_fam_lo,
                      mem_per_fam_hi,
                      b0,
                      b1,       
-                     u0l_sd = 0,   
-                     u0g_sd = 0,   
-                     u0f_sd = 0,   
-                     u0m_sd = 0,   
-                     sigma_sd = 0,
+                     u0l_sd,   
+                     u0g_sd,   
+                     u0f_sd,   
+                     u0m_sd,   
+                     sigma_sd,
                      attrition_post_trt = 0,
                      attrition_post_ctr = 0,
                      ... # helps the function work with pmap() 
@@ -160,14 +162,8 @@ groups/facilitators to “none”.
 # calculate nesting parameters
 # this is ugly because I'm leaving it open that parameters could be fixed
 # or could vary
-  if (grp_per_fac_lo==grp_per_fac_hi) {
-    n_groups_per_facilitator <- grp_per_fac_lo
-    n_groups <- n_groups_per_facilitator * n_facilitator
-  } else {
-    n_groups_per_facilitator = sample(grp_per_fac_lo:grp_per_fac_hi, 
-                                      n_facilitator, replace = TRUE)
-    n_groups <- sum(n_groups_per_facilitator)
-  }
+  
+  n_groups <- (n_leader * grp_per_lead)*2  
     
   if (fam_per_gro_lo==fam_per_gro_hi) {
     n_families_per_group <- fam_per_gro_lo
@@ -198,9 +194,10 @@ groups/facilitators to “none”.
   
 # simulate data -----------------------------------------------------
 # create structure
-  df1 <- add_random(facilitator = n_facilitator) %>%
-    add_random(group = n_groups_per_facilitator, 
-               .nested_in = "facilitator") %>%
+  df1 <- add_random(group = n_groups) %>%
+    #add_random(leader = n_leader) %>%
+    # add_random(group = n_groups_per_leader, 
+    #            .nested_in = "leader") %>%
     add_random(family = n_families_per_group, .nested_in = "group") %>%
     add_random(member = n_members_per_family, .nested_in = "family") %>%
     group_by(family) %>%
@@ -226,7 +223,7 @@ groups/facilitators to “none”.
     arrange(family) %>%
     select(caregiver)
   
-  df <- df1 %>%
+  df3 <- df1 %>%
     bind_cols(df2) %>%
     group_by(caregiver) %>%
     nest() %>% 
@@ -262,24 +259,68 @@ groups/facilitators to “none”.
     add_between(.by = "group",
                 arm = c("treatment", "control")) %>%
     add_recode("arm", "treatment", control = 0, treatment = 1) %>%
-  # https://stackoverflow.com/a/37205167/841405
-    mutate(facilitator = case_when(
-      treatment == 0 ~ "none",
-      TRUE ~ facilitator)
-    ) %>%
+  # create singleton clusters for group 
+    group_by(treatment) %>%
+    nest() %>% 
+    mutate(
+        group2 = map2(data, treatment, ~{
+            if (treatment == 1){
+                .x$group
+            } else {
+                .x$member
+            }
+        })
+    ) %>% 
+    unnest(cols=c(data, group2)) %>%
+    ungroup() %>%
     mutate(group = case_when(
-      treatment == 0 ~ "none",
-      TRUE ~ group)
-    ) %>%
+      treatment==0 ~ group2,
+      TRUE ~ group
+    )) %>%
+    select(-group2) #%>%
+  
+# assign groups to leaders
+  leader_assignment <- df3 %>% 
+    distinct(group) %>%
+    mutate(leader = rep(row_number(), length.out = n(), 
+                        each = grp_per_lead)) %>%
+    mutate(leader = paste0("l", leader))
+  
+  df <- df3 %>%
+    left_join(leader_assignment) %>%
+  # create singleton clusters for leader 
+    group_by(treatment) %>%
+    nest() %>% 
+    mutate(
+        leader2 = map2(data, treatment, ~{
+            if (treatment == 1){
+                paste("l0", seq(1:nrow(.)), sep = "_")
+            } else {
+                .x$member
+            }
+        })
+    ) %>% 
+    unnest(cols=c(data, leader2)) %>%
+    ungroup() %>%
+    mutate(leader = case_when(
+      treatment==0 ~ leader2,
+      TRUE ~ leader
+    )) %>%
+    select(-leader2) %>%
+    arrange(leader, group, family, member) %>%
   # add random intercepts
-    add_ranef("facilitator", u0l = u0l_sd) %>%
+    add_ranef("leader", u0l = u0l_sd) %>%
     add_ranef("group", u0g = u0g_sd) %>%
     add_ranef("family", u0f = u0f_sd) %>%
-    add_ranef("member", u0m = u0m_sd) %>%
     add_ranef(sigma = sigma_sd) %>%
   # calculate DV
-    mutate(dv = b0 + u0l + u0g + u0f + u0m + 
-             (b1 * treatment) + sigma) %>% 
+    mutate(dv = b0 + 
+                b1*treatment +
+                u0l*treatment +   # is 0 for control
+                u0g*treatment +   # is 0 for control
+                u0f +             # apply family effect to all
+                sigma             # apply sigma to all (homoscedastic model)
+           ) %>% 
   # attrition
     group_by(treatment) %>%
     nest() %>%
@@ -296,7 +337,7 @@ groups/facilitators to “none”.
       TRUE ~ dv
     )) %>%
   # finalize
-    select(member, family, treatment, group, facilitator,
+    select(member, family, treatment, group, leader,
            age, female, caregiver, grandparent, 
            dv) %>%
     arrange(family)
@@ -321,8 +362,12 @@ groups/facilitators to “none”.
   # fit by method
     if (method == "lme4") {
       
-      fit <- lmer(dv ~ treatment + age + female + caregiver +
-                    (1 | facilitator/group/family),
+      # fit <- lmer(dv ~ treatment + age + female + caregiver +
+      #               (1 | leader/group/family),
+      #             data = df)
+      
+      fit <- lmer(dv ~ treatment + age + female + caregiver + 
+                    (0 + treatment | leader/group/family),
                   data = df)
   
       res <- broom.mixed::tidy(fit, conf.int = TRUE) 
@@ -330,8 +375,8 @@ groups/facilitators to “none”.
     } else {
       
       fit <- brm(dv ~ 0 + Intercept + 
-                   treatment + age + female + caregiver +
-                   (1 | facilitator/group/family),
+                   treatment + age + female + caregiver + 
+                   (0 + treatment | leader/group/family),
          # prior = c(prior(normal(0, 2), class = b),
          #           prior(student_t(3, 1, 1), class = sigma)),
                  data = df, 
@@ -348,11 +393,52 @@ groups/facilitators to “none”.
              conf.low_d = conf.low/sd,
              conf.high_d = conf.high/sd) %>%
       mutate(families = families)
+  } else {
+      return(df)
     }
   }
 ```
 
 # Full simulations
+
+## Data
+
+Example data structure:
+
+``` r
+  b1 <- 0.189          # treatment effect on raw metric
+  b0 <- 3.5            # grand mean
+  u0l_sd <- 0.0001     # by-leader random intercept SD
+  u0g_sd <- 0.0001     # by-group random intercept SD
+  u0f_sd <- 0.39       # by-family random intercept SD       
+  #u0m_sd <- 0.28      # by-member random intercept SD
+  sigma_sd <- 0.44     # residual (error) SD
+  n_leader <- 4        # number of leaders (treatment)
+  grp_per_lead <- 2    # groups per leader (treatment)
+  fam_per_gro_lo <- 2; fam_per_gro_hi <- 2  # families per group
+  mem_per_fam_lo <- 2; mem_per_fam_hi <- 2  # members per family
+```
+
+    ## # A tibble: 64 × 10
+    ##    member family group leader treatment    dv   age female caregiver grandparent
+    ##    <chr>  <chr>  <chr> <chr>      <dbl> <dbl> <dbl>  <dbl>     <dbl>       <dbl>
+    ##  1 m01    f01    g01   l1             1  4.08    41      1         1           0
+    ##  2 m02    f01    g01   l1             1  3.94    47      1         1           0
+    ##  3 m03    f02    g01   l1             1  3.83    25      0         1           0
+    ##  4 m04    f02    g01   l1             1  3.58    55      1         1           0
+    ##  5 m05    f03    m05   m05            0  2.96    36      1         1           0
+    ##  6 m06    f03    m06   m06            0  3.91    44      0         1           0
+    ##  7 m07    f04    m07   m07            0  2.72    48      1         1           0
+    ##  8 m08    f04    m08   m08            0  3.92    30      0         1           0
+    ##  9 m09    f05    g03   l1             1  3.71    39      1         1           0
+    ## 10 m10    f05    g03   l1             1  4.48    29      1         1           0
+    ## 11 m11    f06    g03   l1             1  2.49    38      1         1           0
+    ## 12 m12    f06    g03   l1             1  2.82    42      1         1           0
+    ## 13 m13    f07    m13   m13            0  3.03    35      1         1           0
+    ## 14 m14    f07    m14   m14            0  3.26    27      1         1           0
+    ## 15 m15    f08    m15   m15            0  3.72    46      0         1           0
+    ## 16 m16    f08    m16   m16            0  3.34    43      1         1           0
+    ## # … with 48 more rows
 
 ## `lme4`
 
@@ -362,22 +448,14 @@ percentage of simulated 95% confidence intervals are above 0.
 ### Effect size by sample size
 
 ``` r
-  #b1 <- 0.189        # treatment effect on raw metric
-  b0 <- 3.5          # grand mean
-  u0l_sd <- 0.0001   # by-facilitator random intercept SD
-  u0g_sd <- 0.0001   # by-group random intercept SD
-  u0f_sd <- 0.39     # by-family random intercept SD       
-  u0m_sd <- 0.28     # by-member random intercept SD
-  sigma_sd <- 0.44   # residual (error) SD
-  
   x <- crossing(
     # number of simulations per combination
       rep = 1:250,
     # SAMPLE SIZE DETERMINATION -------------
-    # number of facilitators 
-      n_facilitator = c(10, 25, 50), 
-    # groups per facilitator
-      grp_per_fac_lo = 3, grp_per_fac_hi = 3,
+    # number of leaders 
+      n_leader = c(5, 13, 25), 
+    # groups per leader
+      grp_per_lead = 3,
     # families per group
       fam_per_gro_lo = 4, fam_per_gro_hi = 4,
     # members per family
@@ -389,7 +467,7 @@ percentage of simulated 95% confidence intervals are above 0.
       u0l_sd = u0l_sd,   
       u0g_sd = u0g_sd,   
       u0f_sd = u0f_sd,       
-      u0m_sd = u0m_sd,
+      #u0m_sd = u0m_sd,
       sigma_sd = sigma_sd
   ) %>%
     mutate(seed = 1:nrow(.),
@@ -426,31 +504,31 @@ effects would need to be in the 0.60 SD range.
            )
 ```
 
-![](simulate_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+![](simulate_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
 
-### What if random effects are smaller than observed in pilot?
+### What if random effects/error are smaller than observed in pilot?
 
 There is some bump in detectable effect size if we assume that the
-random intercepts (SD) are about half of what we observed in the small
-pilot.
+random intercepts (SD) and residual error are at the low end of the 95%
+confidence interval.
 
 ``` r
   b1 <- 0.189        # treatment effect on raw metric
   b0 <- 3.5          # grand mean
-  u0l_sd <- 0.0001   # by-facilitator random intercept SD
+  u0l_sd <- 0.0001   # by-leader random intercept SD
   u0g_sd <- 0.0001   # by-group random intercept SD
-  u0f_sd <- 0.39     # by-family random intercept SD       
-  u0m_sd <- 0.28     # by-member random intercept SD
-  sigma_sd <- 0.44   # residual (error) SD
+  u0f_sd <- 0.09     # by-family random intercept SD       
+  #u0m_sd <- 0.0001  # by-member random intercept SD
+  sigma_sd <- 0.34   # residual (error) SD
   
   x <- crossing(
     # number of simulations per combination
       rep = 1:250,
     # SAMPLE SIZE DETERMINATION -------------
-    # number of facilitators 
-      n_facilitator = 25, 
-    # groups per facilitator
-      grp_per_fac_lo = 3, grp_per_fac_hi = 3,
+    # number of leaders 
+      n_leader = 13, 
+    # groups per leader
+      grp_per_lead = 3,
     # families per group
       fam_per_gro_lo = 4, fam_per_gro_hi = 4,
     # members per family
@@ -461,9 +539,9 @@ pilot.
       b0 = b0,             
       u0l_sd = u0l_sd,   
       u0g_sd = u0g_sd,   
-      u0f_sd = c(u0f_sd/2, u0f_sd),       
-      u0m_sd = c(u0m_sd/2, u0m_sd),
-      sigma_sd = sigma_sd
+      u0f_sd = c(u0f_sd, u0f_sd),       
+      #u0m_sd = c(u0m_sd, u0m_sd),
+      sigma_sd = c(sigma_sd, sigma_sd)
   ) %>%
     mutate(seed = 1:nrow(.),
            action = "fit",
@@ -473,29 +551,28 @@ pilot.
     unnest(analysis)
 ```
 
-![](simulate_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
+![](simulate_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
 
-Fewer families are needed to detect small effects if random intercepts
-for family and member are half of what we observed in the (very) small
-pilot.
+Here’s a look at 240 families using the low end of the 95% confidence
+intervals from the pilot.
 
 ``` r
   b1 <- 0.189        # treatment effect on raw metric
   b0 <- 3.5          # grand mean
-  u0l_sd <- 0.0001   # by-facilitator random intercept SD
+  u0l_sd <- 0.0001   # by-leader random intercept SD
   u0g_sd <- 0.0001   # by-group random intercept SD
-  u0f_sd <- 0.39/2   # by-family random intercept SD       
-  u0m_sd <- 0.28/2   # by-member random intercept SD
-  sigma_sd <- 0.44   # residual (error) SD
+  u0f_sd <- 0.09     # by-family random intercept SD       
+  #u0m_sd <- 0.0001  # by-member random intercept SD
+  sigma_sd <- 0.34   # residual (error) SD
   
   x <- crossing(
     # number of simulations per combination
       rep = 1:250,
     # SAMPLE SIZE DETERMINATION -------------
-    # number of facilitators 
-      n_facilitator = 20, 
-    # groups per facilitator
-      grp_per_fac_lo = 3, grp_per_fac_hi = 3,
+    # number of leaders 
+      n_leader = 10, 
+    # groups per leader
+      grp_per_lead = 3,
     # families per group
       fam_per_gro_lo = 4, fam_per_gro_hi = 4,
     # members per family
@@ -507,7 +584,7 @@ pilot.
       u0l_sd = u0l_sd,   
       u0g_sd = u0g_sd,   
       u0f_sd = u0f_sd,       
-      u0m_sd = u0m_sd,
+      #u0m_sd = u0m_sd,
       sigma_sd = sigma_sd
   ) %>%
     mutate(seed = 1:nrow(.),
@@ -518,7 +595,7 @@ pilot.
     unnest(analysis)
 ```
 
-![](simulate_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+![](simulate_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
 
 # Next steps
 
