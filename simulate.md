@@ -234,18 +234,60 @@ John provided the following notes:
 # simulate data -----------------------------------------------------
 # create structure
   df1 <- add_random(group = n_groups) %>%
-    #add_random(leader = n_leader) %>%
-    # add_random(group = n_groups_per_leader, 
-    #            .nested_in = "leader") %>%
     add_random(family = n_families_per_group, .nested_in = "group") %>%
     add_random(member = n_members_per_family, .nested_in = "family") %>%
     group_by(family) %>%
     mutate(n_members = n()) %>%
     ungroup()
   
-# add member details
+# assign families to arm 
+  t_assignment <- df1 %>%
+    distinct(family) %>%
+    mutate(treatment = c(rep(1, nrow(.)/2),
+                         rep(0, nrow(.)/2)))  
+
+# create singleton clusters for group 
   df2 <- df1 %>%
-  # every family must have at least one child and one caregiver
+    left_join(t_assignment) %>%
+    mutate(group = case_when(
+      treatment==1 ~ group,
+      TRUE ~ member
+    ))
+  
+# assign groups to leaders
+  l_assignment <- df2 %>% 
+    filter(treatment==1) %>%
+    distinct(group) %>%
+    mutate(leader = rep(row_number(), length.out = n(), 
+                        each = grp_per_lead)) %>%
+    mutate(leader = paste0("l", leader))
+  
+# join back leader assignments, calculate dv
+  df3 <- df2 %>%
+    left_join(l_assignment) %>%
+  # create singleton clusters for leader 
+    mutate(leader = case_when(
+      treatment==1 ~ leader,
+      TRUE ~ member
+    )) %>%
+    arrange(leader, group, family, member) %>%
+  # add random intercepts
+    add_ranef("leader", u0l = u0l_sd) %>%
+    add_ranef("group", u0g = u0g_sd) %>%
+    add_ranef("family", u0f = u0f_sd) %>%
+    add_ranef(sigma = sigma_sd) %>%
+  # calculate DV
+    mutate(dv = b0 + 
+                b1*treatment +
+                u0l*treatment +   # is 0 for control
+                u0g*treatment +   # is 0 for control
+                u0f +             # apply family effect to all
+                sigma             # apply sigma to all (homoscedastic model)
+           ) 
+
+# identify caregivers
+  df4 <- df3 %>%
+# every family must have at least one child and one caregiver
     nest(data = -family) %>% 
     .[sample(1:nrow(.), nrow(.)), ] %>% # shuffle the group order
     mutate(
@@ -262,8 +304,9 @@ John provided the following notes:
     arrange(family) %>%
     select(caregiver)
   
-  df3 <- df1 %>%
-    bind_cols(df2) %>%
+# add member details
+  df <- df3 %>%
+    bind_cols(df4) %>%
     group_by(caregiver) %>%
     nest() %>% 
   # generate ages
@@ -294,73 +337,6 @@ John provided the following notes:
     )) %>% 
   # create indicator for female
     mutate(female = sample(c(0, 1), n(), replace=TRUE)) %>%
-  # add treatment assignment
-    add_between(.by = "group",
-                arm = c("treatment", "control")) %>%
-    add_recode("arm", "treatment", control = 0, treatment = 1) %>%
-  # create singleton clusters for group 
-    group_by(treatment) %>%
-    nest() %>% 
-    mutate(
-        group2 = map2(data, treatment, ~{
-            if (treatment == 1){
-                .x$group
-            } else {
-                .x$member
-            }
-        })
-    ) %>% 
-    unnest(cols=c(data, group2)) %>%
-    ungroup() %>%
-    mutate(group = case_when(
-      treatment==0 ~ group2,
-      TRUE ~ group
-    )) %>%
-    select(-group2) #%>%
-  
-# assign groups to leaders
-  leader_assignment <- df3 %>% 
-    distinct(group) %>%
-    mutate(leader = rep(row_number(), length.out = n(), 
-                        each = grp_per_lead)) %>%
-    mutate(leader = paste0("l", leader))
-  
-# join back leader assignments and calculate dv
-  df <- df3 %>%
-    left_join(leader_assignment) %>%
-  # create singleton clusters for leader 
-    group_by(treatment) %>%
-    nest() %>% 
-    mutate(
-        leader2 = map2(data, treatment, ~{
-            if (treatment == 1){
-                paste("l0", seq(1:nrow(.)), sep = "_")
-            } else {
-                .x$member
-            }
-        })
-    ) %>% 
-    unnest(cols=c(data, leader2)) %>%
-    ungroup() %>%
-    mutate(leader = case_when(
-      treatment==0 ~ leader2,
-      TRUE ~ leader
-    )) %>%
-    select(-leader2) %>%
-    arrange(leader, group, family, member) %>%
-  # add random intercepts
-    add_ranef("leader", u0l = u0l_sd) %>%
-    add_ranef("group", u0g = u0g_sd) %>%
-    add_ranef("family", u0f = u0f_sd) %>%
-    add_ranef(sigma = sigma_sd) %>%
-  # calculate DV
-    mutate(dv = b0 + 
-                b1*treatment +
-                u0l*treatment +   # is 0 for control
-                u0g*treatment +   # is 0 for control
-                u0f +             # apply family effect to all
-                sigma             # apply sigma to all (homoscedastic model)
-           ) %>% 
   # attrition
     group_by(treatment) %>%
     nest() %>%
@@ -489,22 +465,22 @@ Example data structure:
     ## # A tibble: 562 × 10
     ##    member family group leader treatment    dv   age female caregiver grandparent
     ##    <chr>  <chr>  <chr> <chr>      <dbl> <dbl> <dbl>  <dbl>     <dbl>       <dbl>
-    ##  1 m001   f001   g01   l1             1  4.17    42      0         1           0
-    ##  2 m002   f001   g01   l1             1  3.18    14      1         0           0
-    ##  3 m003   f001   g01   l1             1  3.00     9      0         0           0
-    ##  4 m004   f001   g01   l1             1  4.13    16      1         0           0
-    ##  5 m005   f001   g01   l1             1  3.25    15      1         0           0
-    ##  6 m006   f002   g01   l1             1  3.49    11      0         0           0
-    ##  7 m007   f002   g01   l1             1  3.52    37      0         1           0
-    ##  8 m008   f002   g01   l1             1  2.87     9      0         0           0
-    ##  9 m009   f002   g01   l1             1  3.02    48      1         1           0
-    ## 10 m010   f003   g01   l1             1  3.37    13      0         0           0
-    ## 11 m011   f003   g01   l1             1  3.66    43      0         1           0
-    ## 12 m012   f003   g01   l1             1  3.60    49      0         1           0
-    ## 13 m013   f004   g01   l1             1  3.43    41      0         1           0
-    ## 14 m014   f004   g01   l1             1  3.47    35      1         1           0
-    ## 15 m015   f004   g01   l1             1  3.15    10      0         0           0
-    ## 16 m016   f004   g01   l1             1  3.71    14      0         0           0
+    ##  1 m001   f001   g01   l1             1  3.96    14      0         0           0
+    ##  2 m002   f001   g01   l1             1  4.10    10      1         0           0
+    ##  3 m005   f001   g01   l1             1  4.28    16      0         0           0
+    ##  4 m003   f001   g01   l1             1  4.97    35      0         1           0
+    ##  5 m004   f001   g01   l1             1  5.05    34      1         1           0
+    ##  6 m006   f002   g01   l1             1  4.32    11      0         0           0
+    ##  7 m007   f002   g01   l1             1  4.38    10      1         0           0
+    ##  8 m008   f002   g01   l1             1  4.56    38      1         1           0
+    ##  9 m009   f002   g01   l1             1  3.76    39      1         1           0
+    ## 10 m012   f003   g01   l1             1  4.34    10      0         0           0
+    ## 11 m010   f003   g01   l1             1  4.73    59      0         1           1
+    ## 12 m011   f003   g01   l1             1  3.58    55      0         1           0
+    ## 13 m013   f004   g01   l1             1  4.23    14      0         0           0
+    ## 14 m016   f004   g01   l1             1  4.04     9      0         0           0
+    ## 15 m014   f004   g01   l1             1  3.95    37      1         1           0
+    ## 16 m015   f004   g01   l1             1  4.14    29      0         1           0
     ## # … with 546 more rows
 
 ## `lme4`
