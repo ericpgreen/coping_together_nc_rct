@@ -81,10 +81,15 @@ There was no random effect of group observed in the small pilot:
     SD (Intercept: group)                      |        0.00 | [0.00, 0.37]
     SD (Residual)                              |        0.44 | [0.34, 0.52]
 
-These are the values we’ll use in the simulation. With a SD of \~0.63, a
-Cohen’s d value of 0.30 would be `0.63*0.3 = 0.189`
+``` r
+  denom <- sqrt((0.44^2)+(0^2)+(0.39^2)+(0.28^2))
+```
 
-      b1 <- 0.189        # treatment effect on raw metric
+These are the values we’ll use in the simulation. With the square root
+of the sum of all the variance components equal to 0.65, a Cohen’s
+d-like value of 0.30 would be `0.65*0.3 = 0.195`
+
+      b1 <- 0.195        # treatment effect on raw metric
       b0 <- 3.5          # grand mean
       u0l_sd <- 0.0001   # by-leader random intercept SD
       u0g_sd <- 0.0001   # by-group random intercept SD
@@ -109,13 +114,54 @@ that simulated the analysis of partially nested RCTs. We take the
 approach of coding the partially nested clusters as ‘singleton’ clusters
 and fit a partially nested homoscedastic mixed effects model.
 
+John ran the following model in Stata:
+
+    mixed dv treatment || family: || group:treatment, nocons || leader:treatment, nocons reml dfmethod(sat) iterate(100) stddev
+
+The equivalent syntax for lmer is:
+
+    lmer(dv ~ treatment + (0 + treatment | leader/group) + (1 | family))
+
+    Random effects:
+    Groups       Name        Std.Dev.
+    group:leader treatment   0.0000 
+     leader      treatment   0.0000 
+     family      (Intercept) 0.3981 
+     Residual                0.4066 
+    Number of obs: 562, groups:  group:leader, 289; leader, 279; family, 160
+    Fixed Effects:
+    (Intercept)    treatment 
+         3.5299       0.1242 
+
+John provided the following notes:
+
+> The standard deviation of the group random intercept and leader random
+> intercept is estimated to be zero, which is in line with what you
+> simulated. These random intercepts are only defined in the treatment
+> arm (which you can tell from the output since it says “treatment”
+> under Name.
+
+> Technically, this is parameterized as a random slope, but we are
+> suppressing the separate random intercept. Normally, we would think of
+> a slope as being defined on a continuous value (e.g., continuous
+> time). Since treatment is a binary variable and we suppress the random
+> intercept, it is essentially a random intercept in the treatment arm
+> only.
+
+> The standard deviation of the family random intercept is 0.398, which
+> is close to what you simulated based on. This random intercept is
+> defined in both treatment arms, since we expect there to be clustering
+> within family regardless of treatment arm.
+
+> The standard deviation of the individual level variation is 0.41.
+
 ## Function
 
 ``` r
 #' Simulate data
 #' @param seed
-#' @param action simulate data only or data + fit
-#' @param method lme4 or brms
+#' @param action simulate "data only" or "fit" (sim and fit)
+#' @param method "lmer" or "brm"
 #' @param n_leader number of group leaders (treatment)
 #' @param grp_per_lead number of groups per leader
 #' @param fam_per_gro_lo number of families per group, low end
@@ -133,8 +179,8 @@ and fit a partially nested homoscedastic mixed effects model.
 #' @param attrition_post_ctr post attrition in control arm
 
   simfit <- function(seed,
-                     action = c("data only", "fit"),
-                     method = c("lme4", "brms"),
+                     action = "data only",
+                     method = "lmer",
                      n_leader, 
                      grp_per_lead,
                      fam_per_gro_lo,
@@ -341,11 +387,6 @@ and fit a partially nested homoscedastic mixed effects model.
   if (action == "fit"){
     
   set.seed(seed)
-    
-  # pooled sd
-    sd <- df %>% 
-      summarize(sd = sd(dv, na.rm = TRUE)) %>%
-      pull(sd)
   
   # number of families
     families <- df %>% 
@@ -354,23 +395,38 @@ and fit a partially nested homoscedastic mixed effects model.
       pull()
     
   # fit by method
-    if (method == "lme4") {
+    if (method == "lmer") {
       
-      # fit <- lmer(dv ~ treatment + age + female + caregiver +
-      #               (1 | leader/group/family),
-      #             data = df)
+      fit <- lmer(dv ~ treatment + age + female + caregiver +
+                    (0 + treatment | leader/group) + 
+                    (1 | family), 
+                  data=df)
+  
+      res <- broom.mixed::tidy(fit, conf.int = TRUE) %>%
+        mutate(type = "raw")
       
-      fit <- lmer(dv ~ treatment + age + female + caregiver + 
-                    (0 + treatment | leader/group/family),
-                  data = df)
+      sqrt_sum_var <- res %>%
+        filter(effect=="ran_pars") %>%
+        mutate(estimate = estimate^2) %>%
+        summarize(sqrt_sum_var = sqrt(sum(estimate))) %>%
+        pull(sqrt_sum_var)
+      
+      res <- res %>%
+        filter(effect=="fixed") %>%
+        filter(term != "(Intercept)") %>%
+        mutate(estimate = estimate/sqrt_sum_var,
+               conf.low = conf.low/sqrt_sum_var,
+               conf.high = conf.high/sqrt_sum_var,
+               type = "d_t") %>%
+        bind_rows(res) %>%
+        mutate(families = families)
   
-      res <- broom.mixed::tidy(fit, conf.int = TRUE) 
-  
-    } else {
+    } else if (method == "brm") {
       
       fit <- brm(dv ~ 0 + Intercept + 
                    treatment + age + female + caregiver + 
-                   (0 + treatment | leader/group/family),
+                   (0 + treatment | leader/group) + 
+                   (1 | family),
          # prior = c(prior(normal(0, 2), class = b),
          #           prior(student_t(3, 1, 1), class = sigma)),
                  data = df, 
@@ -378,15 +434,32 @@ and fit a partially nested homoscedastic mixed effects model.
                  cores = parallel::detectCores(),
                  backend = "cmdstanr")
       
-      res <- tidy_plus_plus(fit)
+      res <- tidy_plus_plus(fit, quiet = TRUE) %>%
+        mutate(type = "raw")
+    
+      res_d_t <- fit %>%
+        posterior_samples(pars = c("^b_", "sd_", "sigma")) %>%
+        mutate(across(c(starts_with("sd_"), sigma), ~ . ^2)) %>%
+        mutate(sqrt_sum_var = sqrt(rowSums(select(., 
+                                                  c(starts_with("sd_"),
+                                                    sigma))))) %>%
+        mutate(across(c(starts_with("b_")), ~ . / sqrt_sum_var)) %>%
+        summarise_draws() %>% 
+        filter(str_detect(variable, "b_")) %>%
+        mutate(variable = gsub("b_", "", variable)) %>%
+        select(variable, mean, q5, q95) %>%
+        rename(term = variable,
+               estimate = mean, 
+               conf.low = q5,
+               conf.high = q95) %>%
+        mutate(type = "d_t") %>%
+        filter(term != "Intercept")
+      
+      res <- res %>%
+        bind_rows(res_d_t) %>%
+        mutate(families = families)
     }
     
-    res <- res %>%
-      mutate(sd = sd) %>%
-      mutate(estimate_d = estimate/sd,
-             conf.low_d = conf.low/sd,
-             conf.high_d = conf.high/sd) %>%
-      mutate(families = families)
   } else {
       return(df)
     }
@@ -400,39 +473,39 @@ and fit a partially nested homoscedastic mixed effects model.
 Example data structure:
 
 ``` r
-  b1 <- 0.189          # treatment effect on raw metric
+  b1 <- 0.195          # treatment effect on raw metric
   b0 <- 3.5            # grand mean
   u0l_sd <- 0.0001     # by-leader random intercept SD
   u0g_sd <- 0.0001     # by-group random intercept SD
   u0f_sd <- 0.39       # by-family random intercept SD       
   #u0m_sd <- 0.28      # by-member random intercept SD
   sigma_sd <- 0.44     # residual (error) SD
-  n_leader <- 4        # number of leaders (treatment)
+  n_leader <- 10        # number of leaders (treatment)
   grp_per_lead <- 2    # groups per leader (treatment)
-  fam_per_gro_lo <- 2; fam_per_gro_hi <- 2  # families per group
-  mem_per_fam_lo <- 2; mem_per_fam_hi <- 2  # members per family
+  fam_per_gro_lo <- 4; fam_per_gro_hi <- 4  # families per group
+  mem_per_fam_lo <- 2; mem_per_fam_hi <- 5  # members per family
 ```
 
-    ## # A tibble: 64 × 10
+    ## # A tibble: 562 × 10
     ##    member family group leader treatment    dv   age female caregiver grandparent
     ##    <chr>  <chr>  <chr> <chr>      <dbl> <dbl> <dbl>  <dbl>     <dbl>       <dbl>
-    ##  1 m01    f01    g01   l1             1  4.08    41      1         1           0
-    ##  2 m02    f01    g01   l1             1  3.94    47      1         1           0
-    ##  3 m03    f02    g01   l1             1  3.83    25      0         1           0
-    ##  4 m04    f02    g01   l1             1  3.58    55      1         1           0
-    ##  5 m05    f03    m05   m05            0  2.96    36      1         1           0
-    ##  6 m06    f03    m06   m06            0  3.91    44      0         1           0
-    ##  7 m07    f04    m07   m07            0  2.72    48      1         1           0
-    ##  8 m08    f04    m08   m08            0  3.92    30      0         1           0
-    ##  9 m09    f05    g03   l1             1  3.71    39      1         1           0
-    ## 10 m10    f05    g03   l1             1  4.48    29      1         1           0
-    ## 11 m11    f06    g03   l1             1  2.49    38      1         1           0
-    ## 12 m12    f06    g03   l1             1  2.82    42      1         1           0
-    ## 13 m13    f07    m13   m13            0  3.03    35      1         1           0
-    ## 14 m14    f07    m14   m14            0  3.26    27      1         1           0
-    ## 15 m15    f08    m15   m15            0  3.72    46      0         1           0
-    ## 16 m16    f08    m16   m16            0  3.34    43      1         1           0
-    ## # … with 48 more rows
+    ##  1 m001   f001   g01   l1             1  4.17    42      0         1           0
+    ##  2 m002   f001   g01   l1             1  3.18    14      1         0           0
+    ##  3 m003   f001   g01   l1             1  3.00     9      0         0           0
+    ##  4 m004   f001   g01   l1             1  4.13    16      1         0           0
+    ##  5 m005   f001   g01   l1             1  3.25    15      1         0           0
+    ##  6 m006   f002   g01   l1             1  3.49    11      0         0           0
+    ##  7 m007   f002   g01   l1             1  3.52    37      0         1           0
+    ##  8 m008   f002   g01   l1             1  2.87     9      0         0           0
+    ##  9 m009   f002   g01   l1             1  3.02    48      1         1           0
+    ## 10 m010   f003   g01   l1             1  3.37    13      0         0           0
+    ## 11 m011   f003   g01   l1             1  3.66    43      0         1           0
+    ## 12 m012   f003   g01   l1             1  3.60    49      0         1           0
+    ## 13 m013   f004   g01   l1             1  3.43    41      0         1           0
+    ## 14 m014   f004   g01   l1             1  3.47    35      1         1           0
+    ## 15 m015   f004   g01   l1             1  3.15    10      0         0           0
+    ## 16 m016   f004   g01   l1             1  3.71    14      0         0           0
+    ## # … with 546 more rows
 
 ## `lme4`
 
@@ -456,7 +529,7 @@ percentage of simulated 95% confidence intervals are above 0.
       mem_per_fam_lo = 2, mem_per_fam_hi = 5,
     # MODEL ----------------------------------
     # effect
-      b1 = c(.189, .378), # cohens d ~ 0.3, 0.6
+      b1 = c(0.195, .39), # cohens d ~ 0.3, 0.6
       b0 = b0,             
       u0l_sd = u0l_sd,   
       u0g_sd = u0g_sd,   
@@ -466,7 +539,7 @@ percentage of simulated 95% confidence intervals are above 0.
   ) %>%
     mutate(seed = 1:nrow(.),
            action = "fit",
-           method = "lme4"
+           method = "lmer"
            ) %>%
     mutate(analysis = pmap(., simfit)) %>%
     unnest(analysis)
@@ -475,28 +548,6 @@ percentage of simulated 95% confidence intervals are above 0.
 Small effects will be difficult to detect with anything less than 600
 families if the pilot data are any guide. With only \~120 families the
 effects would need to be in the 0.60 SD range.
-
-``` r
-  x %>% 
-    filter(term=="treatment") %>%
-    mutate(n_families = paste0(n_obs, " families")) %>%
-    ggplot(aes(x = factor(rep), y = estimate, 
-               ymin = conf.low, ymax = conf.high)) +
-      geom_pointrange(fatten = 1/4, alpha=0.7) +
-      geom_hline(yintercept = b1, linetype="dashed") +
-      geom_hline(yintercept = 0, color = "red") +
-      facet_wrap(~ n_families) +
-      theme_bw() + 
-      theme(plot.title = element_text(face="bold"),
-            plot.title.position = "plot",
-            legend.position = "none") +
-      labs(x = "Simulation index",
-           y = "Estimate (original 1-5 metric)",
-           title = "Power simulation",
-           subtitle = str_wrap("X number of simulations...", 100),
-           caption = str_wrap("Simulations assume...", 120)
-           )
-```
 
 ![](simulate_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
 

@@ -79,10 +79,14 @@ SD (Intercept: group)                      |        0.00 | [0.00, 0.37]
 SD (Residual)                              |        0.44 | [0.34, 0.52]
 ```
 
-These are the values we'll use in the simulation. With a SD of ~0.63, a Cohen's d value of 0.30 would be `0.63*0.3 = 0.189`
+```{r}
+  denom <- sqrt((0.44^2)+(0^2)+(0.39^2)+(0.28^2))
+```
+
+These are the values we'll use in the simulation. With the square root of the sum of all the variance components equal to `r round(denom, 2)`, a Cohen's d-like value of 0.30 would be `0.65*0.3 = 0.195`
 
 ```
-  b1 <- 0.189        # treatment effect on raw metric
+  b1 <- 0.195        # treatment effect on raw metric
   b0 <- 3.5          # grand mean
   u0l_sd <- 0.0001   # by-leader random intercept SD
   u0g_sd <- 0.0001   # by-group random intercept SD
@@ -99,13 +103,46 @@ These are the values we'll use in the simulation. With a SD of ~0.63, a Cohen's 
 
 John shared a paper by [Candlish et al. (2018)](https://bmcmedresmethodol.biomedcentral.com/articles/10.1186/s12874-018-0559-x) that simulated the analysis of partially nested RCTs. We take the approach of coding the partially nested clusters as 'singleton' clusters and fit a partially nested homoscedastic mixed effects model.
 
+John ran the following model in Stata:
+
+```
+mixed dv treatment || family: || group:treatment, nocons || leader:treatment, nocons reml dfmethod(sat) iterate(100) stddev
+```
+
+The equivalent syntax for lmer is:
+
+```
+lmer(dv ~ treatment + (0 + treatment | leader/group) + (1 | family))
+
+Random effects:
+Groups       Name        Std.Dev.
+group:leader treatment   0.0000 
+ leader      treatment   0.0000 
+ family      (Intercept) 0.3981 
+ Residual                0.4066 
+Number of obs: 562, groups:  group:leader, 289; leader, 279; family, 160
+Fixed Effects:
+(Intercept)    treatment 
+     3.5299       0.1242 
+```
+
+John provided the following notes:
+
+> The standard deviation of the group random intercept and leader random intercept is estimated to be zero, which is in line with what you simulated. These random intercepts are only defined in the treatment arm (which you can tell from the output since it says "treatment" under Name.
+
+> Technically, this is parameterized as a random slope, but we are suppressing the separate random intercept. Normally, we would think of a slope as being defined on a continuous value (e.g., continuous time). Since treatment is a binary variable and we suppress the random intercept, it is essentially a random intercept in the treatment arm only.
+
+> The standard deviation of the family random intercept is 0.398, which is close to what you simulated based on. This random intercept is defined in both treatment arms, since we expect there to be clustering within family regardless of treatment arm.
+
+> The standard deviation of the individual level variation is 0.41.
+
 ## Function
 
 ```{r simfit}
 #' Simulate data
 #' @param seed
-#' @param action simulate data only or data + fit
-#' @param method lme4 or brms
+#' @param action simulate "data only" or "fit" (sim and fit)
+#' @param method "lmer" or "brm"
 #' @param n_leader number of group leaders (treatment)
 #' @param grp_per_lead number of groups per leader
 #' @param fam_per_gro_lo number of families per group, low end
@@ -123,8 +160,8 @@ John shared a paper by [Candlish et al. (2018)](https://bmcmedresmethodol.biomed
 #' @param attrition_post_ctr post attrition in control arm
 
   simfit <- function(seed,
-                     action = c("data only", "fit"),
-                     method = c("lme4", "brms"),
+                     action = "data only",
+                     method = "lmer",
                      n_leader, 
                      grp_per_lead,
                      fam_per_gro_lo,
@@ -278,7 +315,8 @@ John shared a paper by [Candlish et al. (2018)](https://bmcmedresmethodol.biomed
     mutate(
         leader2 = map2(data, treatment, ~{
             if (treatment == 1){
-                paste("l0", seq(1:nrow(.)), sep = "_")
+                #paste("l0", seq(1:nrow(.)), sep = "_")
+                .x$leader
             } else {
                 .x$member
             }
@@ -331,11 +369,6 @@ John shared a paper by [Candlish et al. (2018)](https://bmcmedresmethodol.biomed
   if (action == "fit"){
     
   set.seed(seed)
-    
-  # pooled sd
-    sd <- df %>% 
-      summarize(sd = sd(dv, na.rm = TRUE)) %>%
-      pull(sd)
   
   # number of families
     families <- df %>% 
@@ -344,23 +377,38 @@ John shared a paper by [Candlish et al. (2018)](https://bmcmedresmethodol.biomed
       pull()
     
   # fit by method
-    if (method == "lme4") {
+    if (method == "lmer") {
       
-      # fit <- lmer(dv ~ treatment + age + female + caregiver +
-      #               (1 | leader/group/family),
-      #             data = df)
+      fit <- lmer(dv ~ treatment + age + female + caregiver +
+                    (0 + treatment | leader/group) + 
+                    (1 | family), 
+                  data=df)
+  
+      res <- broom.mixed::tidy(fit, conf.int = TRUE) %>%
+        mutate(type = "raw")
       
-      fit <- lmer(dv ~ treatment + age + female + caregiver + 
-                    (0 + treatment | leader/group/family),
-                  data = df)
+      sqrt_sum_var <- res %>%
+        filter(effect=="ran_pars") %>%
+        mutate(estimate = estimate^2) %>%
+        summarize(sqrt_sum_var = sqrt(sum(estimate))) %>%
+        pull(sqrt_sum_var)
+      
+      res <- res %>%
+        filter(effect=="fixed") %>%
+        filter(term != "(Intercept)") %>%
+        mutate(estimate = estimate/sqrt_sum_var,
+               conf.low = conf.low/sqrt_sum_var,
+               conf.high = conf.high/sqrt_sum_var,
+               type = "d_t") %>%
+        bind_rows(res) %>%
+        mutate(families = families)
   
-      res <- broom.mixed::tidy(fit, conf.int = TRUE) 
-  
-    } else {
+    } else if (method == "brm") {
       
       fit <- brm(dv ~ 0 + Intercept + 
                    treatment + age + female + caregiver + 
-                   (0 + treatment | leader/group/family),
+                   (0 + treatment | leader/group) + 
+                   (1 | family),
          # prior = c(prior(normal(0, 2), class = b),
          #           prior(student_t(3, 1, 1), class = sigma)),
                  data = df, 
@@ -368,15 +416,32 @@ John shared a paper by [Candlish et al. (2018)](https://bmcmedresmethodol.biomed
                  cores = parallel::detectCores(),
                  backend = "cmdstanr")
       
-      res <- tidy_plus_plus(fit)
+      res <- tidy_plus_plus(fit, quiet = TRUE) %>%
+        mutate(type = "raw")
+    
+      res_d_t <- fit %>%
+        posterior_samples(pars = c("^b_", "sd_", "sigma")) %>%
+        mutate(across(c(starts_with("sd_"), sigma), ~ . ^2)) %>%
+        mutate(sqrt_sum_var = sqrt(rowSums(select(., 
+                                                  c(starts_with("sd_"),
+                                                    sigma))))) %>%
+        mutate(across(c(starts_with("b_")), ~ . / sqrt_sum_var)) %>%
+        summarise_draws() %>% 
+        filter(str_detect(variable, "b_")) %>%
+        mutate(variable = gsub("b_", "", variable)) %>%
+        select(variable, mean, q5, q95) %>%
+        rename(term = variable,
+               estimate = mean, 
+               conf.low = q5,
+               conf.high = q95) %>%
+        mutate(type = "d_t") %>%
+        filter(term != "Intercept")
+      
+      res <- res %>%
+        bind_rows(res_d_t) %>%
+        mutate(families = families)
     }
     
-    res <- res %>%
-      mutate(sd = sd) %>%
-      mutate(estimate_d = estimate/sd,
-             conf.low_d = conf.low/sd,
-             conf.high_d = conf.high/sd) %>%
-      mutate(families = families)
   } else {
       return(df)
     }
@@ -391,23 +456,24 @@ John shared a paper by [Candlish et al. (2018)](https://bmcmedresmethodol.biomed
 Example data structure:
 
 ```{r}
-  b1 <- 0.189          # treatment effect on raw metric
+  b1 <- 0.195          # treatment effect on raw metric
   b0 <- 3.5            # grand mean
   u0l_sd <- 0.0001     # by-leader random intercept SD
   u0g_sd <- 0.0001     # by-group random intercept SD
   u0f_sd <- 0.39       # by-family random intercept SD       
   #u0m_sd <- 0.28      # by-member random intercept SD
   sigma_sd <- 0.44     # residual (error) SD
-  n_leader <- 4        # number of leaders (treatment)
+  n_leader <- 10        # number of leaders (treatment)
   grp_per_lead <- 2    # groups per leader (treatment)
-  fam_per_gro_lo <- 2; fam_per_gro_hi <- 2  # families per group
-  mem_per_fam_lo <- 2; mem_per_fam_hi <- 2  # members per family
+  fam_per_gro_lo <- 4; fam_per_gro_hi <- 4  # families per group
+  mem_per_fam_lo <- 2; mem_per_fam_hi <- 5  # members per family
 ```
 
 ```{r, echo=FALSE}
   x <- simfit(seed = 8675309,
-              action = "data",
+              action = "data only",
               method = "lmer",
+              est = "raw",
               n_leader = n_leader,
               grp_per_lead = grp_per_lead,
               fam_per_gro_lo = fam_per_gro_lo,
@@ -427,7 +493,6 @@ Example data structure:
     as_tibble() %>%
     print(n=16)
 ```
-
 
 ## `lme4`
 
@@ -450,7 +515,7 @@ The first approach is in the NHST tradition and calculates the percentage of sim
       mem_per_fam_lo = 2, mem_per_fam_hi = 5,
     # MODEL ----------------------------------
     # effect
-      b1 = c(.189, .378), # cohens d ~ 0.3, 0.6
+      b1 = c(0.195, .39), # cohens d ~ 0.3, 0.6
       b0 = b0,             
       u0l_sd = u0l_sd,   
       u0g_sd = u0g_sd,   
@@ -460,7 +525,7 @@ The first approach is in the NHST tradition and calculates the percentage of sim
   ) %>%
     mutate(seed = 1:nrow(.),
            action = "fit",
-           method = "lme4"
+           method = "lmer"
            ) %>%
     mutate(analysis = pmap(., simfit)) %>%
     unnest(analysis)
@@ -468,33 +533,14 @@ The first approach is in the NHST tradition and calculates the percentage of sim
 
 Small effects will be difficult to detect with anything less than 600 families if the pilot data are any guide. With only ~120 families the effects would need to be in the 0.60 SD range.
 
-```{r, eval=FALSE}
-  x %>% 
-    filter(term=="treatment") %>%
-    mutate(n_families = paste0(n_obs, " families")) %>%
-    ggplot(aes(x = factor(rep), y = estimate, 
-               ymin = conf.low, ymax = conf.high)) +
-      geom_pointrange(fatten = 1/4, alpha=0.7) +
-      geom_hline(yintercept = b1, linetype="dashed") +
-      geom_hline(yintercept = 0, color = "red") +
-      facet_wrap(~ n_families) +
-      theme_bw() + 
-      theme(plot.title = element_text(face="bold"),
-            plot.title.position = "plot",
-            legend.position = "none") +
-      labs(x = "Simulation index",
-           y = "Estimate (original 1-5 metric)",
-           title = "Power simulation",
-           subtitle = str_wrap("X number of simulations...", 100),
-           caption = str_wrap("Simulations assume...", 120)
-           )
-```
-
 ```{r, echo=FALSE, dpi = 300}
+effect_type <- "d_t"
+effect_y <- ifelse(effect_type=="d_t", "Estimate (d_t)", "Estimate (raw)")
+
 # calculate power
 # !! must group by all crossings that are not fixed
   power <- x %>% 
-    filter(term=="treatment") %>% 
+    filter(term == "treatment", type == effect_type) %>% 
     group_by(families, b1) %>%
     mutate(check = ifelse(conf.low > 0, 1, 0)) %>% 
     summarise(power = mean(check))
@@ -505,23 +551,23 @@ Small effects will be difficult to detect with anything less than 600 families i
 # calculate mean estimate of b1
 # !! must group by all crossings that are not fixed
   d_mean <- x %>% 
-    filter(term=="treatment") %>% 
+    filter(term == "treatment", type == effect_type) %>% 
     group_by(families, b1) %>%
-    summarise(d_mean = mean(estimate_d)) 
+    summarise(d_mean = mean(estimate)) 
   
   x <- x %>%
     left_join(d_mean)
   
   sims <- max(x$rep)
-
+    
   x %>% 
-    filter(term=="treatment") %>%
+    filter(term=="treatment" & type==effect_type) %>%
     mutate(b1 = case_when(
       b1 == min(x$b1) ~ "d = 0.30",
       TRUE ~ "d = 0.60"
     )) %>%
-    ggplot(aes(x = factor(rep), y = estimate_d, 
-               ymin = conf.low_d, ymax = conf.high_d)) +
+    ggplot(aes(x = factor(rep), y = estimate, 
+               ymin = conf.low, ymax = conf.high)) +
     geom_pointrange(fatten = 1/4, alpha=0.5) +
     geom_hline(aes(yintercept = d_mean), linetype="dashed") +
     geom_hline(yintercept = 0, color = "red") +
@@ -537,7 +583,7 @@ Small effects will be difficult to detect with anything less than 600 families i
           axis.text.x = element_blank(),
           axis.ticks.x = element_blank()) +
     labs(x = "Simulation index",
-         y = "Estimate (Cohen's d)",
+         y = effect_y,
          title = "Power simulation",
          subtitle = str_wrap(paste0(sims, " simulations each panel"), 100),
          caption = str_wrap(paste0("Data simulated with the following random intercepts (SD): ", u0l_sd, " leader; ", u0g_sd, " group; ", u0f_sd, " family; ", sigma_sd, " residual error."), 120)
