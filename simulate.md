@@ -87,7 +87,7 @@ There was no random effect of group observed in the small pilot:
 
 These are the values we’ll use in the simulation. With the square root
 of the sum of all the variance components equal to 0.65, a Cohen’s
-d-like value of 0.30 would be `0.65*0.3 = 0.195`
+d-like value of 0.30 would be a raw difference of `0.65*0.3 = 0.195`.
 
       b1 <- 0.195        # treatment effect on raw metric
       b0 <- 3.5          # grand mean

@@ -83,7 +83,7 @@ SD (Residual)                              |        0.44 | [0.34, 0.52]
   denom <- sqrt((0.44^2)+(0^2)+(0.39^2)+(0.28^2))
 ```
 
-These are the values we'll use in the simulation. With the square root of the sum of all the variance components equal to `r round(denom, 2)`, a Cohen's d-like value of 0.30 would be `0.65*0.3 = 0.195`
+These are the values we'll use in the simulation. With the square root of the sum of all the variance components equal to `r round(denom, 2)`, a Cohen's d-like value of 0.30 would be a raw difference of `0.65*0.3 = 0.195`.
 
 ```
   b1 <- 0.195        # treatment effect on raw metric
@@ -380,12 +380,24 @@ John provided the following notes:
   
     } else if (method == "brm") {
       
+      df_ <- df %>%
+        mutate(dv = scale(dv),
+               age = scale(age))
+      
       fit <- brm(dv ~ 0 + Intercept + 
                    treatment + age + female + caregiver + 
                    (0 + treatment | leader/group) + 
                    (1 | family),
-         # prior = c(prior(normal(0, 2), class = b),
-         #           prior(student_t(3, 1, 1), class = sigma)),
+                 prior = c(prior("normal(0, 0.2)", 
+                                 class = "b", coef = "age"),
+                           prior("normal(0, 0.2)", 
+                                 class = "b", coef = "female"),
+                           prior("normal(0, 0.2)", 
+                                 class = "b", coef = "caregiver"),
+                           prior("normal(0, 1)", 
+                                 class = "b", coef = "treatment"),
+                           prior("normal(0, 2)", 
+                                 class = "b", coef = "Intercept")),
                  data = df, 
                  control = list(adapt_delta = 0.9),
                  cores = parallel::detectCores(),
