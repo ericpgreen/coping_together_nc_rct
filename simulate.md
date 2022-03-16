@@ -527,6 +527,76 @@ effects would need to be in the 0.60 SD range.
 
 ![](simulate_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
 
+### Assume l95 values from pilot for randem effects
+
+    # only 1 group per leader in pilot
+    # model had convergence issues
+
+    # Fixed Effects 
+
+    Parameter   | Coefficient |   SE |        95% CI | t(81) |      p
+    -----------------------------------------------------------------
+    (Intercept) |        4.09 | 0.14 | [ 3.82, 4.37] | 29.75 | < .001
+    post        |       -0.02 | 0.10 | [-0.22, 0.19] | -0.17 | 0.865 
+    caregiver   |        0.11 | 0.13 | [-0.15, 0.38] |  0.85 | 0.396 
+
+    # Random Effects 
+
+    Parameter                                  | Coefficient |       95% CI
+    -----------------------------------------------------------------------
+    SD (Intercept: member:(family:group))      |        0.28 | [0.00, 0.46]
+    SD (Intercept: family:group)               |        0.39 | [0.09, 0.59]
+    SD (Intercept: group)                      |        0.00 | [0.00, 0.37]
+    SD (Residual)                              |        0.44 | [0.34, 0.52]
+
+``` r
+b1 <- 0.105        # treatment effect on raw metric
+b0 <- 3.5          # grand mean
+u0l_sd <- 0.0001   # by-leader random intercept SD
+u0g_sd <- 0.0001   # by-group random intercept SD
+u0f_sd <- 0.09     # by-family random intercept SD       
+#u0m_sd <- 0       # by-member random intercept SD (ONLY IF REPEATED MEASURES)
+sigma_sd <- 0.34   # residual (error) SD
+```
+
+``` r
+  x <- crossing(
+    # number of simulations per combination
+      rep = 1:250,
+    # SAMPLE SIZE DETERMINATION -------------
+    # number of leaders 
+      n_leader = c(5, 8), 
+    # groups per leader
+      grp_per_lead = 3,
+    # families per group
+      fam_per_gro_lo = 4, fam_per_gro_hi = 4,
+    # members per family
+      mem_per_fam_lo = 2, mem_per_fam_hi = 5,
+    # MODEL ----------------------------------
+    # effect
+      b1 = c(0.105, .21), # cohens d ~ 0.3, 0.6
+      b0 = b0,             
+      u0l_sd = u0l_sd,   
+      u0g_sd = u0g_sd,   
+      u0f_sd = u0f_sd,       
+      #u0m_sd = u0m_sd,
+      sigma_sd = sigma_sd
+  ) %>%
+    mutate(seed = 1:nrow(.),
+           action = "fit",
+           method = "lmer"
+           ) %>%
+    mutate(analysis = pmap(., simfit)) %>%
+    unnest(analysis)
+```
+
+If we go with the estimates of the lower 95% confidence interval for
+random effects from the small pilot trial, the required sample size goes
+down a good bit. Now we’re in the ballpark of d=0.3 with just north of
+120 families (60 treated) before considering attrition.
+
+![](simulate_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+
 # Next steps
 
 1.  Add Bayesian estimates to focus on precision. If Eve can’t fund a
