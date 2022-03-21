@@ -34,6 +34,8 @@ package.
   library(cmdstanr)
   library(tidybayes)
   library(sjPlot)
+
+  options("cmdstanr_write_stan_file_dir" = "cmdstanr")
 ```
 
 ## How should we set the random effects for simulating data?
@@ -162,6 +164,7 @@ John provided the following notes:
 #' @param seed
 #' @param action simulate "data only" or "fit" (sim and fit)
 #' @param method "lmer" or "brm"
+#' @param ci interval width
 #' @param n_leader number of group leaders (treatment)
 #' @param grp_per_lead number of groups per leader
 #' @param fam_per_gro_lo number of families per group, low end
@@ -170,6 +173,7 @@ John provided the following notes:
 #' @param mem_per_fam_hi number of members per family, high end
 #' @param b0 intercept
 #' @param b1 fixed effect of treatment
+#' @param b1_d minimum effect of interest (d-like scale)
 #' @param u0l_sd random intercept SD for leaders
 #' @param u0g_sd random intercept SD for groups
 #' @param u0f_sd random intercept SD for families
@@ -181,6 +185,7 @@ John provided the following notes:
   simfit <- function(seed,
                      action = "data only",
                      method = "lmer",
+                     ci = 0.89,
                      n_leader, 
                      grp_per_lead,
                      fam_per_gro_lo,
@@ -188,7 +193,8 @@ John provided the following notes:
                      mem_per_fam_lo,
                      mem_per_fam_hi,
                      b0,
-                     b1,       
+                     b1,
+                     b1_d = 0,
                      u0l_sd,   
                      u0g_sd,   
                      u0f_sd,   
@@ -289,7 +295,7 @@ John provided the following notes:
   df4 <- df3 %>%
 # every family must have at least one child and one caregiver
     nest(data = -family) %>% 
-    .[sample(1:nrow(.), nrow(.)), ] %>% # shuffle the group order
+    #.[sample(1:nrow(.), nrow(.)), ] %>% # shuffle the group order
     mutate(
       value_count = ifelse(row_number() / n() <= 0.25, 
                            sample(1:2, n(), replace = T), 2)
@@ -297,11 +303,13 @@ John provided the following notes:
     rowwise() %>% 
     mutate(
       count = nrow(data),
-      caregiver = list(sample(c(rep(1, value_count), 
-                            rep(0, count - value_count)), count))
-      ) %>% 
+      caregiver = case_when(
+        count>2 ~ list(sample(c(rep(1, value_count), 
+                                rep(0, count - value_count)), count)),
+        TRUE ~ list(c(1,0))
+      )) %>% 
     unnest(cols=c(caregiver)) %>% 
-    arrange(family) %>%
+    #arrange(family) %>%
     select(caregiver)
   
 # add member details
@@ -378,15 +386,18 @@ John provided the following notes:
                     (1 | family), 
                   data=df)
   
-      res <- broom.mixed::tidy(fit, conf.int = TRUE) %>%
+    # results on raw metric
+      res <- broom.mixed::tidy(fit, conf.int = TRUE, conf.level = ci) %>%
         mutate(type = "raw")
       
+    # divide effect by sqrt of sum of variances
       sqrt_sum_var <- res %>%
         filter(effect=="ran_pars") %>%
         mutate(estimate = estimate^2) %>%
         summarize(sqrt_sum_var = sqrt(sum(estimate))) %>%
         pull(sqrt_sum_var)
       
+    # combine with raw
       res <- res %>%
         filter(effect=="fixed") %>%
         filter(term != "(Intercept)") %>%
@@ -399,37 +410,67 @@ John provided the following notes:
   
     } else if (method == "brm") {
       
-      fit <- brm(dv ~ 0 + Intercept + 
-                   treatment + age + female + caregiver + 
-                   (0 + treatment | leader/group) + 
-                   (1 | family),
-         # prior = c(prior(normal(0, 2), class = b),
-         #           prior(student_t(3, 1, 1), class = sigma)),
-                 data = df, 
-                 control = list(adapt_delta = 0.9),
-                 cores = parallel::detectCores(),
-                 backend = "cmdstanr")
+      df_ <- df %>%
+        mutate(dv = scale(dv),
+               age = scale(age))
       
-      res <- tidy_plus_plus(fit, quiet = TRUE) %>%
+      # fit <- brm(dv ~ 0 + Intercept + 
+      #              treatment + age + female + caregiver + 
+      #              (0 + treatment | leader/group) + 
+      #              (1 | family),
+      #            prior = c(prior("normal(0, 0.2)", 
+      #                            class = "b", coef = "age"),
+      #                      prior("normal(0, 0.2)", 
+      #                            class = "b", coef = "female"),
+      #                      prior("normal(0, 0.2)", 
+      #                            class = "b", coef = "caregiver"),
+      #                      prior("normal(0.3, 0.2)", 
+      #                            class = "b", coef = "treatment"),
+      #                      prior("normal(0, 2)", 
+      #                            class = "b", coef = "Intercept")),
+      #            data = df_, 
+      #            control = list(adapt_delta = 0.9),
+      #            cores = parallel::detectCores(),
+      #            backend = "cmdstanr")
+      
+      fit <- update(fit, newdata = df_, seed = seed)
+      
+    # results on raw metric
+      res <- tidy_plus_plus(fit, quiet = TRUE, conf.level = ci) %>%
         mutate(type = "raw")
+      
+      ql <- (1-ci)/2
+      qu <- 1-((1-ci)/2)
     
-      res_d_t <- fit %>%
-        posterior_samples(pars = c("^b_", "sd_", "sigma")) %>%
+    # divide effect by sqrt of sum of variances
+      res_d_t <- fit %>% 
+        spread_draws(b_treatment, sigma, sd_family__Intercept,
+                     sd_leader__treatment, `sd_leader:group__treatment`) %>%
         mutate(across(c(starts_with("sd_"), sigma), ~ . ^2)) %>%
         mutate(sqrt_sum_var = sqrt(rowSums(select(., 
                                                   c(starts_with("sd_"),
                                                     sigma))))) %>%
         mutate(across(c(starts_with("b_")), ~ . / sqrt_sum_var)) %>%
-        summarise_draws() %>% 
+        {. ->> temp} %>%
+        summarise_draws(mean, 
+                        ~quantile(.x, probs = c(ql, qu))) %>% 
         filter(str_detect(variable, "b_")) %>%
         mutate(variable = gsub("b_", "", variable)) %>%
-        select(variable, mean, q5, q95) %>%
-        rename(term = variable,
-               estimate = mean, 
-               conf.low = q5,
-               conf.high = q95) %>%
+        setNames(c("term", "estimate", "conf.low", "conf.high")) %>%
         mutate(type = "d_t") %>%
         filter(term != "Intercept")
+      
+    # calculate posterior > target effect
+      postprob <- hypothesis(temp, 
+                             paste0("b_treatment > ", 
+                                    b1_d))$hypothesis$Post.Prob
+      
+    # combine
+      res_d_t <- res_d_t %>%
+        mutate(postprob = case_when(
+          term=="treatment" ~ postprob,
+          TRUE ~ NA_real_
+        ))
       
       res <- res %>%
         bind_rows(res_d_t) %>%
@@ -456,32 +497,32 @@ Example data structure:
   u0f_sd <- 0.39       # by-family random intercept SD       
   #u0m_sd <- 0.28      # by-member random intercept SD
   sigma_sd <- 0.44     # residual (error) SD
-  n_leader <- 10        # number of leaders (treatment)
-  grp_per_lead <- 2    # groups per leader (treatment)
+  n_leader <- 10       # number of leaders (treatment)
+  grp_per_lead <- 3    # groups per leader (treatment)
   fam_per_gro_lo <- 4; fam_per_gro_hi <- 4  # families per group
-  mem_per_fam_lo <- 2; mem_per_fam_hi <- 5  # members per family
+  mem_per_fam_lo <- 2; mem_per_fam_hi <- 3  # members per family
 ```
 
-    ## # A tibble: 562 × 10
+    ## # A tibble: 600 × 10
     ##    member family group leader treatment    dv   age female caregiver grandparent
     ##    <chr>  <chr>  <chr> <chr>      <dbl> <dbl> <dbl>  <dbl>     <dbl>       <dbl>
-    ##  1 m001   f001   g01   l1             1  3.96    14      0         0           0
-    ##  2 m002   f001   g01   l1             1  4.10    10      1         0           0
-    ##  3 m005   f001   g01   l1             1  4.28    16      0         0           0
-    ##  4 m003   f001   g01   l1             1  4.97    35      0         1           0
-    ##  5 m004   f001   g01   l1             1  5.05    34      1         1           0
-    ##  6 m006   f002   g01   l1             1  4.32    11      0         0           0
-    ##  7 m007   f002   g01   l1             1  4.38    10      1         0           0
-    ##  8 m008   f002   g01   l1             1  4.56    38      1         1           0
-    ##  9 m009   f002   g01   l1             1  3.76    39      1         1           0
-    ## 10 m012   f003   g01   l1             1  4.34    10      0         0           0
-    ## 11 m010   f003   g01   l1             1  4.73    59      0         1           1
-    ## 12 m011   f003   g01   l1             1  3.58    55      0         1           0
-    ## 13 m013   f004   g01   l1             1  4.23    14      0         0           0
-    ## 14 m016   f004   g01   l1             1  4.04     9      0         0           0
-    ## 15 m014   f004   g01   l1             1  3.95    37      1         1           0
-    ## 16 m015   f004   g01   l1             1  4.14    29      0         1           0
-    ## # … with 546 more rows
+    ##  1 m001   f001   g01   l1             1  2.88     8      1         0           0
+    ##  2 m003   f001   g01   l1             1  3.22     8      1         0           0
+    ##  3 m002   f001   g01   l1             1  3.08    37      1         1           0
+    ##  4 m005   f002   g01   l1             1  3.01    11      0         0           0
+    ##  5 m004   f002   g01   l1             1  2.97    38      1         1           0
+    ##  6 m007   f003   g01   l1             1  4.70     8      1         0           0
+    ##  7 m006   f003   g01   l1             1  4.29    50      1         1           0
+    ##  8 m008   f003   g01   l1             1  3.88    26      1         1           0
+    ##  9 m010   f004   g01   l1             1  4.20    11      0         0           0
+    ## 10 m009   f004   g01   l1             1  4.06    44      0         1           0
+    ## 11 m011   f005   g02   l1             1  3.01    11      1         0           0
+    ## 12 m012   f005   g02   l1             1  3.03    39      1         1           0
+    ## 13 m013   f005   g02   l1             1  3.24    43      0         1           0
+    ## 14 m015   f006   g02   l1             1  3.09    16      1         0           0
+    ## 15 m014   f006   g02   l1             1  3.51    27      0         1           0
+    ## 16 m017   f007   g02   l1             1  3.02    16      1         0           0
+    ## # … with 584 more rows
 
 ## `lme4`
 
@@ -491,18 +532,18 @@ percentage of simulated 95% confidence intervals are above 0.
 ### Effect size by sample size
 
 ``` r
-  x <- crossing(
+  r1 <- crossing(
     # number of simulations per combination
       rep = 1:250,
     # SAMPLE SIZE DETERMINATION -------------
     # number of leaders 
-      n_leader = c(5, 8), 
+      n_leader = c(5, 10), 
     # groups per leader
       grp_per_lead = 3,
     # families per group
       fam_per_gro_lo = 4, fam_per_gro_hi = 4,
     # members per family
-      mem_per_fam_lo = 2, mem_per_fam_hi = 5,
+      mem_per_fam_lo = 2, mem_per_fam_hi = 3,
     # MODEL ----------------------------------
     # effect
       b1 = c(0.195, .39), # cohens d ~ 0.3, 0.6
@@ -515,19 +556,91 @@ percentage of simulated 95% confidence intervals are above 0.
   ) %>%
     mutate(seed = 1:nrow(.),
            action = "fit",
-           method = "lmer"
+           method = "lmer",
+           ci = 0.95
            ) %>%
     mutate(analysis = pmap(., simfit)) %>%
     unnest(analysis)
 ```
 
-Small effects will be difficult to detect with anything less than 600
-families if the pilot data are any guide. With only \~120 families the
-effects would need to be in the 0.60 SD range.
+Small effects (0.3) will be difficult to detect with anything less than
+400 families if the pilot data are any guide.
 
 ![](simulate_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
 
-### Assume l95 values from pilot for randem effects
+## `brms`
+
+Next we take the same NHST approach to power from a Bayesian
+perspective. We fit the model once with a strongly informative prior on
+treatment and then use `update()` to fit without recompiling in the
+simulation.
+
+``` r
+  df_ <- df %>%
+    mutate(dv = scale(dv),
+           age = scale(age))
+      
+  fit <- brm(dv ~ 0 + Intercept + 
+               treatment + age + female + caregiver + 
+               (0 + treatment | leader/group) + 
+               (1 | family),
+             prior = c(prior("normal(0, 0.2)", 
+                             class = "b", coef = "age"),
+                       prior("normal(0, 0.2)", 
+                             class = "b", coef = "female"),
+                       prior("normal(0, 0.2)", 
+                             class = "b", coef = "caregiver"),
+                       prior("normal(0.3, 0.2)", 
+                             class = "b", coef = "treatment"),
+                       prior("normal(0, 2)", 
+                             class = "b", coef = "Intercept")),
+             data = df_, 
+             control = list(adapt_delta = 0.9),
+             cores = parallel::detectCores(),
+             backend = "cmdstanr")
+```
+
+Running with a smaller sample size:
+
+``` r
+  r3 <- crossing(
+    # number of simulations per combination
+      rep = 1:250,
+    # SAMPLE SIZE DETERMINATION -------------
+    # number of leaders 
+      n_leader = 6, 
+    # groups per leader
+      grp_per_lead = 3,
+    # families per group
+      fam_per_gro_lo = 4, fam_per_gro_hi = 4,
+    # members per family
+      mem_per_fam_lo = 2, mem_per_fam_hi = 3,
+    # MODEL ----------------------------------
+    # effect
+      b1 = 0.195, # cohens d ~ 0.3, 0.6
+      b1_d = 0.3,
+      b0 = b0,             
+      u0l_sd = u0l_sd,   
+      u0g_sd = u0g_sd,   
+      u0f_sd = u0f_sd,       
+      #u0m_sd = u0m_sd,
+      sigma_sd = sigma_sd
+  ) %>%
+    mutate(seed = 1:nrow(.),
+           action = "fit",
+           method = "brm",
+           ci = 0.95
+           ) %>%
+    mutate(analysis = pmap(., simfit)) %>%
+    unnest(analysis)
+```
+
+![](simulate_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+
+## Alternative inputs
+
+FYI: We’d have greater power to detect effects if we assume the lower
+bound on the random effects from the previous small pilot.
 
     # only 1 group per leader in pilot
     # model had convergence issues
@@ -549,66 +662,12 @@ effects would need to be in the 0.60 SD range.
     SD (Intercept: group)                      |        0.00 | [0.00, 0.37]
     SD (Residual)                              |        0.44 | [0.34, 0.52]
 
-``` r
-b1 <- 0.105        # treatment effect on raw metric
-b0 <- 3.5          # grand mean
-u0l_sd <- 0.0001   # by-leader random intercept SD
-u0g_sd <- 0.0001   # by-group random intercept SD
-u0f_sd <- 0.09     # by-family random intercept SD       
-#u0m_sd <- 0       # by-member random intercept SD (ONLY IF REPEATED MEASURES)
-sigma_sd <- 0.34   # residual (error) SD
-```
-
-``` r
-  x <- crossing(
-    # number of simulations per combination
-      rep = 1:250,
-    # SAMPLE SIZE DETERMINATION -------------
-    # number of leaders 
-      n_leader = c(5, 8), 
-    # groups per leader
-      grp_per_lead = 3,
-    # families per group
-      fam_per_gro_lo = 4, fam_per_gro_hi = 4,
-    # members per family
-      mem_per_fam_lo = 2, mem_per_fam_hi = 5,
-    # MODEL ----------------------------------
-    # effect
-      b1 = c(0.105, .21), # cohens d ~ 0.3, 0.6
-      b0 = b0,             
-      u0l_sd = u0l_sd,   
-      u0g_sd = u0g_sd,   
-      u0f_sd = u0f_sd,       
-      #u0m_sd = u0m_sd,
-      sigma_sd = sigma_sd
-  ) %>%
-    mutate(seed = 1:nrow(.),
-           action = "fit",
-           method = "lmer"
-           ) %>%
-    mutate(analysis = pmap(., simfit)) %>%
-    unnest(analysis)
-```
-
-If we go with the estimates of the lower 95% confidence interval for
-random effects from the small pilot trial, the required sample size goes
-down a good bit. Now we’re in the ballpark of d=0.3 with just north of
-120 families (60 treated) before considering attrition.
-
-![](simulate_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
-
 # Next steps
 
-1.  Add Bayesian estimates to focus on precision. If Eve can’t fund a
-    “definitive” trial (I dislike that term), then I’m interested in
-    getting a better sense of what we could learn with a sample of say
-    75 or 80 families. Thinking about 53% credible intervals (to blend
-    McElreath’s love of prime numbers to highlight arbitrary nature of
-    interval selection and Gelman’s love of 50% intervals).
-2.  Talk about how to analyze data from multiple informants. The current
-    setup uses data from all family members as if we’re estimating the
-    average impact on a person’s perceived functioning of their family.
-    But we can also think of family functioning of something that exists
-    at the level of the family. [Kenny has some
-    notes](https://academic.oup.com/jpepsy/article/36/5/630/924908)
-    about approaches.
+Talk about how to analyze data from multiple informants. The current
+setup uses data from all family members as if we’re estimating the
+average impact on a person’s perceived functioning of their family. But
+we can also think of family functioning of something that exists at the
+level of the family. [Kenny has some
+notes](https://academic.oup.com/jpepsy/article/36/5/630/924908) about
+approaches.
