@@ -515,6 +515,19 @@ Example data structure:
 
 The first approach is in the NHST tradition and calculates the percentage of simulated 95% confidence intervals are above 0.
 
+$$
+\begin{aligned}
+  \operatorname{y}_{i}  &\sim N \left(\mu, \sigma^2 \right) \\
+    \mu &=\alpha_{l[i]} + \beta_{1}(\operatorname{age}) + \beta_{2}(\operatorname{female}) + \beta_{3}(\operatorname{caregiver}) \\
+    \gamma_{1j}  &\sim N \left(\mu_{\gamma_{1j}}, \sigma^2_{\gamma_{1j}} \right)
+    \text{, for group:leader j = 1,} \dots \text{,J} \\
+    \gamma_{1k}  &\sim N \left(\mu_{\gamma_{1k}}, \sigma^2_{\gamma_{1k}} \right)
+    \text{, for leader k = 1,} \dots \text{,K} \\
+    \alpha_{l}  &\sim N \left(\gamma_{0}^{\alpha} + \gamma_{1k[i]}^{\alpha}(\operatorname{treatment}), \sigma^2_{\alpha_{l}} \right)
+    \text{, for family l = 1,} \dots \text{,L}
+\end{aligned}
+$$
+
 ### Effect size by sample size
 
 ```{r, results='hide', message=FALSE, warning=FALSE}
@@ -523,7 +536,7 @@ The first approach is in the NHST tradition and calculates the percentage of sim
       rep = 1:250,
     # SAMPLE SIZE DETERMINATION -------------
     # number of leaders 
-      n_leader = c(5, 10), 
+      n_leader = c(3, 10), 
     # groups per leader
       grp_per_lead = 3,
     # families per group
@@ -549,7 +562,6 @@ The first approach is in the NHST tradition and calculates the percentage of sim
     unnest(analysis)
 ```
 
-Small effects (0.3) will be difficult to detect with anything less than 400 families if the pilot data are any guide. 
 
 ```{r, echo=FALSE, dpi = 300}
 effect_type <- "d_t"

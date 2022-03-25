@@ -529,6 +529,30 @@ Example data structure:
 The first approach is in the NHST tradition and calculates the
 percentage of simulated 95% confidence intervals are above 0.
 
+![
+\\begin{aligned}
+  \\operatorname{y}\_{i}  &\\sim N \\left(\\mu, \\sigma^2 \\right) \\\\
+    \\mu &=\\alpha\_{l\[i\]} + \\beta\_{1}(\\operatorname{age}) + \\beta\_{2}(\\operatorname{female}) + \\beta\_{3}(\\operatorname{caregiver}) \\\\
+    \\gamma\_{1j}  &\\sim N \\left(\\mu\_{\\gamma\_{1j}}, \\sigma^2\_{\\gamma\_{1j}} \\right)
+    \\text{, for group:leader j = 1,} \\dots \\text{,J} \\\\
+    \\gamma\_{1k}  &\\sim N \\left(\\mu\_{\\gamma\_{1k}}, \\sigma^2\_{\\gamma\_{1k}} \\right)
+    \\text{, for leader k = 1,} \\dots \\text{,K} \\\\
+    \\alpha\_{l}  &\\sim N \\left(\\gamma\_{0}^{\\alpha} + \\gamma\_{1k\[i\]}^{\\alpha}(\\operatorname{treatment}), \\sigma^2\_{\\alpha\_{l}} \\right)
+    \\text{, for family l = 1,} \\dots \\text{,L}
+\\end{aligned}
+](https://latex.codecogs.com/png.image?%5Cdpi%7B110%7D&space;%5Cbg_white&space;%0A%5Cbegin%7Baligned%7D%0A%20%20%5Coperatorname%7By%7D_%7Bi%7D%20%20%26%5Csim%20N%20%5Cleft%28%5Cmu%2C%20%5Csigma%5E2%20%5Cright%29%20%5C%5C%0A%20%20%20%20%5Cmu%20%26%3D%5Calpha_%7Bl%5Bi%5D%7D%20%2B%20%5Cbeta_%7B1%7D%28%5Coperatorname%7Bage%7D%29%20%2B%20%5Cbeta_%7B2%7D%28%5Coperatorname%7Bfemale%7D%29%20%2B%20%5Cbeta_%7B3%7D%28%5Coperatorname%7Bcaregiver%7D%29%20%5C%5C%0A%20%20%20%20%5Cgamma_%7B1j%7D%20%20%26%5Csim%20N%20%5Cleft%28%5Cmu_%7B%5Cgamma_%7B1j%7D%7D%2C%20%5Csigma%5E2_%7B%5Cgamma_%7B1j%7D%7D%20%5Cright%29%0A%20%20%20%20%5Ctext%7B%2C%20for%20group%3Aleader%20j%20%3D%201%2C%7D%20%5Cdots%20%5Ctext%7B%2CJ%7D%20%5C%5C%0A%20%20%20%20%5Cgamma_%7B1k%7D%20%20%26%5Csim%20N%20%5Cleft%28%5Cmu_%7B%5Cgamma_%7B1k%7D%7D%2C%20%5Csigma%5E2_%7B%5Cgamma_%7B1k%7D%7D%20%5Cright%29%0A%20%20%20%20%5Ctext%7B%2C%20for%20leader%20k%20%3D%201%2C%7D%20%5Cdots%20%5Ctext%7B%2CK%7D%20%5C%5C%0A%20%20%20%20%5Calpha_%7Bl%7D%20%20%26%5Csim%20N%20%5Cleft%28%5Cgamma_%7B0%7D%5E%7B%5Calpha%7D%20%2B%20%5Cgamma_%7B1k%5Bi%5D%7D%5E%7B%5Calpha%7D%28%5Coperatorname%7Btreatment%7D%29%2C%20%5Csigma%5E2_%7B%5Calpha_%7Bl%7D%7D%20%5Cright%29%0A%20%20%20%20%5Ctext%7B%2C%20for%20family%20l%20%3D%201%2C%7D%20%5Cdots%20%5Ctext%7B%2CL%7D%0A%5Cend%7Baligned%7D%0A "
+\begin{aligned}
+  \operatorname{y}_{i}  &\sim N \left(\mu, \sigma^2 \right) \\
+    \mu &=\alpha_{l[i]} + \beta_{1}(\operatorname{age}) + \beta_{2}(\operatorname{female}) + \beta_{3}(\operatorname{caregiver}) \\
+    \gamma_{1j}  &\sim N \left(\mu_{\gamma_{1j}}, \sigma^2_{\gamma_{1j}} \right)
+    \text{, for group:leader j = 1,} \dots \text{,J} \\
+    \gamma_{1k}  &\sim N \left(\mu_{\gamma_{1k}}, \sigma^2_{\gamma_{1k}} \right)
+    \text{, for leader k = 1,} \dots \text{,K} \\
+    \alpha_{l}  &\sim N \left(\gamma_{0}^{\alpha} + \gamma_{1k[i]}^{\alpha}(\operatorname{treatment}), \sigma^2_{\alpha_{l}} \right)
+    \text{, for family l = 1,} \dots \text{,L}
+\end{aligned}
+")
+
 ### Effect size by sample size
 
 ``` r
@@ -537,7 +561,7 @@ percentage of simulated 95% confidence intervals are above 0.
       rep = 1:250,
     # SAMPLE SIZE DETERMINATION -------------
     # number of leaders 
-      n_leader = c(5, 10), 
+      n_leader = c(3, 10), 
     # groups per leader
       grp_per_lead = 3,
     # families per group
@@ -562,9 +586,6 @@ percentage of simulated 95% confidence intervals are above 0.
     mutate(analysis = pmap(., simfit)) %>%
     unnest(analysis)
 ```
-
-Small effects (0.3) will be difficult to detect with anything less than
-400 families if the pilot data are any guide.
 
 ![](simulate_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
 
